@@ -1,0 +1,9 @@
+{
+    "rust-analyzer.workspace.discoverConfig": null,
+    "terminal.integrated.env.osx": {
+        "DATABASE_URL": "postgres://app:secret@localhost:5432/portfolio"
+    },
+    "terminal.integrated.env.linux": {
+        "DATABASE_URL": "postgres://app:secret@localhost:5432/portfolio"
+    }
+}

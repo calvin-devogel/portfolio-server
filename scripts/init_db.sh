@@ -11,7 +11,7 @@ set -eo pipefail
 # `&` what comes next is a file descriptor, not a file
 # `2` stderr file descriptor number
 # so: `>&2` redirects stdout from echo to stderr
-if ! [ -x "$(command -v sqlx)"]; then
+if ! [ -x "$(command -v sqlx)" ]; then
     echo >&2 "Error: sqlx is not installed."
     echo >&2 "Use:"
     echo >&2 "  cargo install sqlx-cli --no-default-features --features rustls, postgres"
@@ -32,7 +32,7 @@ APP_DB_NAME="${APP_DB_NAME:=portfolio}"
 if [[ -z "${SKIP_DOCKER}" ]]
 then
     # Launch postgres container
-    CONTAINER_NAME="postgres"
+    CONTAINER_NAME="postgres-portfolio"
     docker run \
         --env POSTGRES_USER=${SUPERUSER} \
         --env POSTGRES_PASSWORD=${SUPERUSER_PWD} \

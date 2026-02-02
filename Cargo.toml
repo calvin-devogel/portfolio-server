@@ -14,9 +14,14 @@ name = "portfolio-server"
 tokio = { version = "1", features = ["rt"]}
 
 [dependencies]
+actix-session = { version = "0.11", features = ["redis-session-rustls"]}
+actix-web = "4.12"
+actix-web-flash-messages = { version = "0.5", features = ["cookies"] }
+argon2 = { version = "0.5.3", features = ["std"] }
 anyhow = "1.0.100"
 chrono = { version = "0.4.43", default-features = false, features = ["clock"] }
 config = "0.15.19"
+rustls = { version = "0.23.26", features = ["aws-lc-rs"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = "1.0.228"
 serde-aux = "4.7.0"
@@ -28,4 +33,11 @@ sqlx = { version = "0.8.6", default-features = false, features = [
     "chrono",
     "migrate",
 ] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"]}
+thiserror = "2.0.18"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tracing = "0.1.44"
+tracing-actix-web = "0.7"
+tracing-bunyan-formatter = "0.3.1"
+tracing-log = "0.2"
+tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
