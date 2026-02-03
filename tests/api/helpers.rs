@@ -190,11 +190,7 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
 // i need a way to seed a user into the database without exposing the hash explicitly
 pub fn _seed_user(username: String, password: SecretString) -> TestUser {
     let salt = SaltString::generate(&mut OsRng);
-    let password_hash = Argon2::new(
-            Algorithm::Argon2id,
-            Version::V0x13,
-            Params::new(15000, 2, 1, None).unwrap(),
-        )
+    let password_hash = Argon2::default()
         .hash_password(password.expose_secret().as_bytes(), &salt)
         .unwrap()
         .to_string();
