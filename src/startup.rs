@@ -1,16 +1,15 @@
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 // add `middleware::from_fn, web,` once you start creating routes
-use actix_web::{App, HttpServer, cookie::Key, dev::Server, web, web::Data};
+use actix_web::{App, HttpServer, cookie::Key, dev::Server, middleware::from_fn, web, web::Data};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
-// use crate::authentication::reject_anonymous_users;
+use crate::authentication::reject_anonymous_users;
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::routes::*;
-// use crate::routes::*;
 
 // wrapper type for SecretString
 #[derive(Clone)]
@@ -83,6 +82,11 @@ async fn run(
             .route("/api/logout", web::post().to(logout))
             // why check-auth?
             .route("/api/check-auth", web::get().to(check_auth))
+            .service(
+                web::scope("/api/admin")
+                .wrap(from_fn(reject_anonymous_users))
+                .route("/test", web::get().to(test_reject))
+            )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))

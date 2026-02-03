@@ -20,16 +20,19 @@ async fn main() -> anyhow::Result<()> {
     init_subscriber(subscriber);
 
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let _application = Application::build(configuration.clone()).await?;
-    // let application_task = tokio::spawn(application.run_until_stopped());
+    let application = Application::build(configuration.clone()).await?;
+    let application_task = tokio::spawn(application.run_until_stopped());
 
     // put a tokio-select in here when you're ready
+    tokio::select! {
+        o = application_task => report_exit("API", o)
+    }
 
     Ok(())
 }
 
 // return when the provided task exits (ie. when a background delivery worker finishes)
-fn _report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>, JoinError>) {
+fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>, JoinError>) {
     match outcome {
         Ok(Ok(())) => {
             tracing::info!("{} has exited", task_name)

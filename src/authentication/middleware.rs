@@ -8,8 +8,8 @@ use actix_web::{
 use std::ops::Deref;
 use uuid::Uuid;
 
-use crate::session_state::TypedSession;
-use crate::utils::{e500, see_other};
+use crate::{session_state::TypedSession};
+use crate::utils::{e500, unauthorized};
 
 #[derive(Copy, Clone, Debug)]
 pub struct UserId(Uuid);
@@ -45,7 +45,8 @@ pub async fn reject_anonymous_users(
             next.call(req).await
         }
         None => {
-            let response = see_other("/login");
+            let response = unauthorized();
+            // let response = see_other("/login");
             let e = anyhow::anyhow!("The user has not logged in");
             Err(InternalError::from_response(e, response).into())
         }

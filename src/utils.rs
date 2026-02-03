@@ -23,6 +23,10 @@ pub fn see_other(location: &str) -> HttpResponse {
         .finish()
 }
 
+pub fn unauthorized() -> HttpResponse {
+    HttpResponse::Unauthorized().finish()
+}
+
 // format the error chain
 pub fn error_chain_fmt(
     e: &impl std::error::Error,

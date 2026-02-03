@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use crate::authentication::{validate_credentials, Credentials, AuthError};
 use crate::session_state::TypedSession;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 pub struct LoginRequest {
     username: String,
     password: SecretString,
@@ -16,7 +16,7 @@ pub struct LoginRequest {
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
-    request: web::Json<LoginRequest>,
+    request: web::Form<LoginRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
 ) -> Result<HttpResponse, InternalError<AuthError>> {
@@ -53,6 +53,7 @@ pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Er
 }
 
 // hmmm....
+#[tracing::instrument(name = "Check if authenticated", skip(session))]
 pub async fn check_auth(session: TypedSession) -> HttpResponse {
     match session.get_user_id() {
         Ok(Some(_)) => HttpResponse::Ok().finish(),
