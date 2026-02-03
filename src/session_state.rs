@@ -30,9 +30,9 @@ impl FromRequest for TypedSession {
     // return the same error as Session's implementation of FromRequest
     type Error = <Session as FromRequest>::Error;
 
-    type Future = Ready<Result<TypedSession, Self::Error>>;
+    type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        ready(Ok(TypedSession(req.get_session())))
+        ready(Ok(Self(req.get_session())))
     }
 }

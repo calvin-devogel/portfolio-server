@@ -9,7 +9,7 @@ use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
 use crate::configuration::{DatabaseSettings, Settings};
-use crate::routes::*;
+use crate::routes::{check_auth, login, logout, test_reject};
 
 // wrapper type for SecretString
 #[derive(Clone)]
@@ -46,7 +46,8 @@ impl Application {
         Ok(Self { port, server })
     }
 
-    pub fn port(&self) -> u16 {
+    #[must_use]
+    pub const fn port(&self) -> u16 {
         self.port
     }
 
@@ -84,8 +85,8 @@ async fn run(
             .route("/api/check-auth", web::get().to(check_auth))
             .service(
                 web::scope("/api/admin")
-                .wrap(from_fn(reject_anonymous_users))
-                .route("/test", web::get().to(test_reject))
+                    .wrap(from_fn(reject_anonymous_users))
+                    .route("/test", web::get().to(test_reject)),
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
@@ -97,6 +98,7 @@ async fn run(
     Ok(server)
 }
 
+#[must_use]
 pub fn get_connection_pool(configuration: &DatabaseSettings) -> PgPool {
     PgPoolOptions::new().connect_lazy_with(configuration.connect_options())
 }

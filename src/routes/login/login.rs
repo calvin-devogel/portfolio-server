@@ -1,9 +1,9 @@
-use actix_web::{web, HttpResponse, error::InternalError};
+use actix_web::{HttpResponse, error::InternalError, web};
 // use actix_web_flash_messages::FlashMessage;
+use crate::authentication::{AuthError, Credentials, validate_credentials};
+use crate::session_state::TypedSession;
 use secrecy::SecretString;
 use sqlx::PgPool;
-use crate::authentication::{validate_credentials, Credentials, AuthError};
-use crate::session_state::TypedSession;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct LoginRequest {
@@ -25,11 +25,11 @@ pub async fn login(
         password: request.password.clone(),
     };
 
-    tracing::Span::current().record("username", &tracing::field::display(&credentials.username));
+    tracing::Span::current().record("username", tracing::field::display(&credentials.username));
 
     match validate_credentials(credentials, &pool).await {
         Ok(user_id) => {
-            tracing::Span::current().record("user_id", &tracing::field::display(&user_id));
+            tracing::Span::current().record("user_id", tracing::field::display(&user_id));
             session.renew();
             session
                 .insert_user_id(user_id)
@@ -40,7 +40,7 @@ pub async fn login(
         Err(e) => {
             let e = match e {
                 AuthError::InvalidCredentials(_) => AuthError::InvalidCredentials(e.into()),
-                AuthError::UnexpectedError(_) => AuthError::UnexpectedError(e.into())
+                AuthError::UnexpectedError(_) => AuthError::UnexpectedError(e.into()),
             };
             Err(login_redirect(e))
         }

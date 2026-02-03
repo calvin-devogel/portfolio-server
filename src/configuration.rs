@@ -8,10 +8,11 @@ pub enum Environment {
 }
 
 impl Environment {
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            Environment::Local => "local",
-            Environment::Production => "production",
+            Self::Local => "local",
+            Self::Production => "production",
         }
     }
 }
@@ -24,9 +25,8 @@ impl TryFrom<String> for Environment {
             "local" => Ok(Self::Local),
             "production" => Ok(Self::Production),
             other => Err(format!(
-                "{} is not a supported environment. \
-                Use either `local` or `production`.",
-                other
+                "{other} is not a supported environment. \
+                Use either `local` or `production`."
             )),
         }
     }
@@ -60,6 +60,7 @@ pub struct DatabaseSettings {
 }
 
 impl DatabaseSettings {
+    #[must_use]
     pub fn connect_options(&self) -> PgConnectOptions {
         let ssl_mode = if self.require_ssl {
             PgSslMode::Require
@@ -69,7 +70,7 @@ impl DatabaseSettings {
         PgConnectOptions::new()
             .host(&self.host)
             .username(&self.username)
-            .password(&self.password.expose_secret())
+            .password(self.password.expose_secret())
             .port(self.port)
             .ssl_mode(ssl_mode)
             .database(&self.database_name)
