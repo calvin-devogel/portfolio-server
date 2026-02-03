@@ -24,6 +24,9 @@ pub struct Application {
 }
 
 impl Application {
+    #[allow(clippy::missing_errors_doc)]
+    /// # Panics
+    /// probably not a bad idea to handle port binding issues gracefully
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
@@ -51,6 +54,7 @@ impl Application {
         self.port
     }
 
+    #[allow(clippy::missing_errors_doc)]
     // only return when the application is stopped
     pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
         self.server.await
@@ -58,6 +62,7 @@ impl Application {
 }
 
 // run the actual server
+#[allow(clippy::missing_errors_doc)]
 async fn run(
     listener: TcpListener,
     db_pool: PgPool,

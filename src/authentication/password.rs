@@ -42,6 +42,9 @@ async fn get_stored_credentials(
 }
 
 #[tracing::instrument("Validate credentials", skip(credentials, pool))]
+/// # Errors
+/// shoots off an `AuthError::InvalidCredentials` if the hash for the provided `credentials` cannot be verified
+/// or an `anyhow` error if the `username` doesn't exist in the database
 pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
@@ -98,6 +101,8 @@ fn verify_password_hash(
 }
 
 #[tracing::instrument(name = "Change password", skip(password, pool))]
+/// # Errors
+/// errors from anywheere in this function are handled by `anyhow` and passed up the pipeline
 pub async fn change_password(
     user_id: uuid::Uuid,
     password: SecretString,

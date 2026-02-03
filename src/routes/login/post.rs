@@ -11,6 +11,8 @@ pub struct LoginRequest {
     password: SecretString,
 }
 
+#[allow(clippy::missing_errors_doc)]
+#[allow(clippy::future_not_send)]
 #[tracing::instrument(
     skip(request, pool, session),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
@@ -47,12 +49,14 @@ pub async fn login(
     }
 }
 
+#[allow(clippy::future_not_send, clippy::missing_errors_doc)]
 pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Error> {
     session.log_out();
     Ok(HttpResponse::Ok().finish())
 }
 
 // hmmm....
+#[allow(clippy::future_not_send)]
 #[tracing::instrument(name = "Check if authenticated", skip(session))]
 pub async fn check_auth(session: TypedSession) -> HttpResponse {
     match session.get_user_id() {

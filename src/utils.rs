@@ -28,6 +28,7 @@ pub fn unauthorized() -> HttpResponse {
 }
 
 // format the error chain
+#[allow(clippy::missing_errors_doc)]
 pub fn error_chain_fmt(
     e: &impl std::error::Error,
     f: &mut std::fmt::Formatter<'_>,

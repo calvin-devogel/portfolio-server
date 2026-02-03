@@ -6,6 +6,7 @@ use uuid::Uuid;
 // wrapper type for session
 pub struct TypedSession(Session);
 
+#[allow(clippy::missing_errors_doc)]
 impl TypedSession {
     const USER_ID_KEY: &'static str = "user_id";
 

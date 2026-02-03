@@ -13,7 +13,7 @@ async fn unauthorized_users_are_rejected() {
     let response = app.post_login(&login_body).await;
 
     // assert
-    assert_eq!(response.status().as_u16(), 41);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 #[tokio::test]
