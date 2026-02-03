@@ -62,19 +62,6 @@ pub async fn validate_credentials(
                 .into(),
         )
     };
-    // let mut expected_password_hash = SecretString::new(Box::from(
-    // "$argon2id$v=19$m=15000,t=2,p=1$\
-    // gZiV/M1gPc22ElAH/Jh1Hw$\
-    // CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
-    //         .to_string(),
-    // ));
-
-    // if let Some((stored_user_id, stored_password_hash)) =
-    //     get_stored_credentials(&credentials.username, pool).await?
-    // {
-    //     user_id = Some(stored_user_id);
-    //     expected_password_hash = stored_password_hash;
-    // }
 
     spawn_blocking_with_tracing(move || {
         verify_password_hash(&expected_password_hash, &credentials.password)
