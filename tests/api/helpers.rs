@@ -2,7 +2,7 @@ use argon2::{
     Algorithm, Argon2, Params, PasswordHasher, Version,
     password_hash::{SaltString, rand_core::OsRng},
 };
-use secrecy::SecretString;
+use secrecy::{ExposeSecret, SecretString};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
 use uuid::Uuid;
@@ -27,6 +27,7 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
     }
 });
 
+#[derive(Debug)]
 pub struct TestUser {
     pub user_id: Uuid,
     pub username: String,
@@ -184,4 +185,19 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .expect("Failed to migrate the database.");
 
     connection_pool
+}
+
+// i need a way to seed a user into the database without exposing the hash explicitly
+pub fn _seed_user(username: String, password: SecretString) -> TestUser {
+    let salt = SaltString::generate(&mut OsRng);
+    let password_hash = Argon2::new(
+            Algorithm::Argon2id,
+            Version::V0x13,
+            Params::new(15000, 2, 1, None).unwrap(),
+        )
+        .hash_password(password.expose_secret().as_bytes(), &salt)
+        .unwrap()
+        .to_string();
+
+    TestUser { user_id: Uuid::new_v4(), username, password: password_hash }
 }

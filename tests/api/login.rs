@@ -1,4 +1,4 @@
-use crate::helpers::spawn_app;
+use crate::helpers::{spawn_app};
 
 #[tokio::test]
 async fn unauthorized_users_are_rejected() {
@@ -13,7 +13,7 @@ async fn unauthorized_users_are_rejected() {
     let response = app.post_login(&login_body).await;
 
     // assert
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 41);
 }
 
 #[tokio::test]
