@@ -15,6 +15,25 @@ services:
     instance_size_slug: basic-xxs
     routes:
       - path: /
+    envs:
+      - key: APP_APPLICATION__BASE_URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: APP_DATABASE__USERNAME
+        scope: RUN_TIME
+        value: ${portfolio.USERNAME}
+      - key: APP_DATABASE__PASSWORD
+        scope: RUN_TIME
+        value: ${portfolio.PASSWORD}
+      - key: APP_DATABASE__HOST
+        scope: RUN_TIME
+        value: ${portfolio.HOSTNAME}
+      - key: APP_DATABASE__PORT
+        scope: RUN_TIME
+        value: ${portfolio.PORT}
+      - key: APP_DATABASE__NAME
+        scope: RUN_TIME
+        value: ${portfolio.DATABASE}
 databases:
   - engine: PG
     name: portfolio

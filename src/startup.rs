@@ -9,7 +9,7 @@ use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
 use crate::configuration::{DatabaseSettings, Settings};
-use crate::routes::{check_auth, login, logout, test_reject};
+use crate::routes::{check_auth, health_check, login, logout, test_reject};
 
 // wrapper type for SecretString
 #[derive(Clone)]
@@ -84,6 +84,7 @@ async fn run(
                 secret_key.clone(),
             ))
             .wrap(TracingLogger::default())
+            .route("/health_check", web::get().to(health_check))
             .route("/api/login", web::post().to(login))
             .route("/api/logout", web::post().to(logout))
             // why check-auth?
