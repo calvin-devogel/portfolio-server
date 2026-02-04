@@ -188,6 +188,8 @@ async fn configure_database(config: &DatabaseSettings) -> PgPool {
 }
 
 // i need a way to seed a user into the database without exposing the hash explicitly
+// there should be a way to do this inside the admin console eventually, but for now
+// I'll just compute the hash here and manually insert into the database.
 pub fn _seed_user(username: String, password: SecretString) -> TestUser {
     let salt = SaltString::generate(&mut OsRng);
     let password_hash = Argon2::default()

@@ -28,8 +28,6 @@ impl Deref for UserId {
     }
 }
 
-// how would this work considering we're logging in through a front-end?
-// this site isn't monolithic so how can we communicate about authentication?
 #[allow(clippy::future_not_send)]
 /// # Errors
 /// will return an `actix_web` 500 error if the `user_id` being requested doesn't exist in the database

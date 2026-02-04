@@ -89,7 +89,6 @@ async fn run(
             .route("/health_check", web::get().to(health_check))
             .route("/api/login", web::post().to(login))
             .route("/api/logout", web::post().to(logout))
-            // why check-auth?
             .route("/api/check-auth", web::get().to(check_auth))
             .service(
                 web::scope("/api/admin")
