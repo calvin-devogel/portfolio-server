@@ -30,6 +30,8 @@ impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
+        sqlx::migrate!("./migrations").run(&connection_pool).await.expect("Failed to run migrations!");
+
         let address = format!(
             "{}:{}",
             configuration.application.host, configuration.application.port,
