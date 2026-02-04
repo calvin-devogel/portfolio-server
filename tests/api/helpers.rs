@@ -97,9 +97,9 @@ impl TestApp {
             .expect("Failed to execute request.")
     }
 
-    pub async fn _post_logout(&self) -> reqwest::Response {
+    pub async fn post_logout(&self) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/admin/logout", &self.address))
+            .post(&format!("{}/api/logout", &self.address))
             .send()
             .await
             .expect("Failed to execute request.")
@@ -195,5 +195,9 @@ pub fn _seed_user(username: String, password: SecretString) -> TestUser {
         .unwrap()
         .to_string();
 
-    TestUser { user_id: Uuid::new_v4(), username, password: password_hash }
+    TestUser {
+        user_id: Uuid::new_v4(),
+        username,
+        password: password_hash,
+    }
 }
