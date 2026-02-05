@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::helpers::spawn_app;
 
 #[tokio::test]
-async fn test_rate_limit() {
+async fn rate_limit_middleware_prevents_client_from_exceeding_the_request_limit() {
     // arrange
     let app = spawn_app().await;
 

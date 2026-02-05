@@ -55,16 +55,6 @@ pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Er
     Ok(HttpResponse::Ok().finish())
 }
 
-// hmmm....
-#[allow(clippy::future_not_send)]
-#[tracing::instrument(name = "Check if authenticated", skip(session))]
-pub async fn check_auth(session: TypedSession) -> HttpResponse {
-    match session.get_user_id() {
-        Ok(Some(_)) => HttpResponse::Ok().finish(),
-        _ => HttpResponse::Unauthorized().finish(),
-    }
-}
-
 fn login_redirect(e: AuthError) -> InternalError<AuthError> {
     InternalError::from_response(e, HttpResponse::Unauthorized().finish())
 }

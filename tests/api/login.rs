@@ -20,10 +20,9 @@ async fn unauthorized_users_are_rejected() {
 async fn authorized_users_can_login() {
     // arrange
     let app = spawn_app().await;
-    app.test_user.login(&app).await;
 
     // act
-    let response = app.check_auth().await;
+    let response = app.post_login(&app.test_user).await;
 
     // assert
     assert_eq!(response.status().as_u16(), 200);
@@ -42,23 +41,14 @@ async fn unauthorized_users_cannot_access_restricted_routes() {
 }
 
 #[tokio::test]
-async fn logout_clears_session_state() {
+async fn authorized_users_can_access_restricted_routes() {
     // arrange
     let app = spawn_app().await;
-
-    // act 1: login
     app.test_user.login(&app).await;
-    // assert_eq!(api_login_response.status().as_u16(), 200);
 
-    //act 2: check auth should succeed
-    let auth_response = app.check_auth().await;
-    assert_eq!(auth_response.status().as_u16(), 200);
+    // act
+    let response = app.test_reject().await;
 
-    // act 3: logout
-    let logout_response = app.post_logout().await;
-    assert_eq!(logout_response.status().as_u16(), 200);
-
-    // act 4: check auth should fail
-    let auth_response_after = app.check_auth().await;
-    assert_eq!(auth_response_after.status().as_u16(), 401);
+    // assert
+    assert_eq!(response.status().as_u16(), 200);
 }

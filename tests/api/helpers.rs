@@ -27,7 +27,7 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
     }
 });
 
-#[derive(Debug)]
+#[derive(Debug, serde::Serialize)]
 pub struct TestUser {
     pub user_id: Uuid,
     pub username: String,

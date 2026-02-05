@@ -91,6 +91,7 @@ async fn run(
             ))
             .wrap(RateLimit::new(rate_config.clone(), rate_store.clone()))
             .wrap(TracingLogger::default())
+            // inconsistent - vs _ on heatlh_check and check-auth, fix please
             .route("/health_check", web::get().to(health_check))
             .route("/api/login", web::post().to(login))
             .route("/api/logout", web::post().to(logout))
