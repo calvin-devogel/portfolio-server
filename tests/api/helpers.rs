@@ -128,6 +128,25 @@ impl TestApp {
             .await
             .expect("Failed to execute request.")
     }
+
+    pub async fn post_message<Body>(&self, body: &Body) -> reqwest::Response
+    where 
+        Body: serde::Serialize {
+        self.api_client
+            .post(&format!("{}/api/contact", &self.address))
+            .form(&body)
+            .send()
+            .await
+            .expect("Failed to send message.")
+    }
+
+    pub async fn get_messages(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/admin/messages", &self.address))
+            .send()
+            .await
+            .expect("Failed to get messages.")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {
