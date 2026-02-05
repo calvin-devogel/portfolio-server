@@ -2,9 +2,11 @@ use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 // add `middleware::from_fn, web,` once you start creating routes
 use actix_web::{App, HttpServer, cookie::Key, dev::Server, middleware::from_fn, web, web::Data};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
+use actix_web_ratelimit::{RateLimit, config::RateLimitConfig, store::MemoryStore};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
+use std::sync::Arc;
 use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
@@ -78,6 +80,8 @@ async fn run(
     let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
+    let rate_config = RateLimitConfig::default().max_requests(3).window_secs(10);
+    let rate_store = Arc::new(MemoryStore::new());
     let server = HttpServer::new(move || {
         App::new()
             .wrap(message_framework.clone())
@@ -85,6 +89,7 @@ async fn run(
                 redis_store.clone(),
                 secret_key.clone(),
             ))
+            .wrap(RateLimit::new(rate_config.clone(), rate_store.clone()))
             .wrap(TracingLogger::default())
             .route("/health_check", web::get().to(health_check))
             .route("/api/login", web::post().to(login))

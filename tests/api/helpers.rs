@@ -120,6 +120,14 @@ impl TestApp {
             .await
             .expect("Failed to execute request.")
     }
+
+    pub async fn generic_request(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/health_check", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {
