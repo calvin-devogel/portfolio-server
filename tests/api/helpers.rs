@@ -134,6 +134,7 @@ impl TestApp {
         Body: serde::Serialize {
         self.api_client
             .post(&format!("{}/api/contact", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
             .form(&body)
             .send()
             .await

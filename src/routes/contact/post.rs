@@ -61,15 +61,8 @@ struct ValidatedMessage {
 
 impl MessageForm {
     fn validate(&self) -> Result<ValidatedMessage, MessageError> {
-        // emval is bloated and we don't need it
-        // use email_address instead
-        // let normalized_email = validate_email(&self.email)
-        //     .map(|email| email.normalized)
-        //     .map_err(|e| MessageError::InvalidEmail(
-        //         anyhow::anyhow!("Invalid email: {e:?}")
-        //     ))?;
         let validated_email = EmailAddress::from_str(&self.email)
-            .map(|r| r.email().to_string())
+            .map(|r| r.email())
             .map_err(|e| MessageError::InvalidEmail(
                 anyhow::anyhow!("Invalid email: {e:?}")
             ))?;
