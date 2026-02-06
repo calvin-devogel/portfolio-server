@@ -20,7 +20,7 @@ actix-web = "4.12"
 actix-web-flash-messages = { version = "0.5", features = ["cookies"] }
 actix-web-ratelimit = "0.1"
 argon2 = { version = "0.5.3", features = ["std"] }
-anyhow = "1.0.100"
+anyhow = "1.0.101"
 chrono = { version = "0.4.43", default-features = false, features = ["clock"] }
 config = "0.15.19"
 reqwest = { version = "0.13.1", default-features = false, features = [
@@ -49,3 +49,4 @@ tracing-bunyan-formatter = "0.3.1"
 tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 uuid = { version = "1.20.0", features = ["v4", "serde"] }
+emval = "0.1.12"
