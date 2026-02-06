@@ -1,4 +1,10 @@
 -- Add migration script here
+ALTER TABLE idempotency
+    DROP CONSTRAINT idempotency_pkey;
+
+ALTER TABLE idempotency
+    ADD CONSTRAINT idempotency_pkey PRIMARY KEY (idempotency_key);
+
 -- don't need user id (sometimes)
 ALTER TABLE idempotency
     ALTER COLUMN user_id DROP NOT NULL;

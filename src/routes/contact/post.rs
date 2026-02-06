@@ -1,6 +1,6 @@
 use actix_web::{HttpResponse, HttpRequest, http::StatusCode, ResponseError, web};
-use emval::{validate_email, ValidationError};
-use sqlx::PgPool;
+use emval::{validate_email};
+use sqlx::{PgPool};
 use uuid::Uuid;
 
 use crate::idempotency::{IdempotencyKey, try_processing, save_response, NextAction};
@@ -44,6 +44,12 @@ pub struct MessageForm {
     email: String,
     sender_name: String,
     message_text: String,
+}
+
+#[derive(serde::Serialize)]
+struct MessageResponse {
+    message: &'static str,
+    message_id: Uuid,
 }
 
 struct ValidatedMessage {
@@ -95,8 +101,8 @@ impl MessageForm {
 
 #[tracing::instrument(
     name = "Send message to contact table",
-    skip(form, pool, request),
-    fields(email = %form.email)
+    skip(message, pool, request),
+    fields(email = %message.email)
 )]
 pub async fn post_message(
     message: web::Form<MessageForm>,
@@ -134,13 +140,15 @@ pub async fn post_message(
 
     let rate_ok = sqlx::query_scalar!(
         "SELECT check_email_rate_limit($1, $2, $3)",
-        validated.email,
+        validated_input.email,
         3,
         60
     )
-    .fetch_one(&pool)
+    .fetch_one(pool.get_ref())
     .await
-    .map_err(MessageError::UnexpectedError)?
+    .map_err(|e| MessageError::UnexpectedError(
+        anyhow::anyhow!("Unexpected error: {:?}", e)
+    ))?
     .unwrap_or(false);
 
     if !rate_ok {
@@ -160,16 +168,16 @@ pub async fn post_message(
         validated_input.sender_name,
         validated_input.message_text,
     )
-    .execute(&pool)
+    .execute(pool.get_ref())
     .await;
 
     match result {
         Ok(_) => {
             tracing::info!("Message saved successfully with: {}", message_id);
-            let response = HttpResponse::Accepted().json(serde_json::json!({
-                "message": "Message received successfully",
-                "message_id": message_id
-            }));
+            let response = HttpResponse::Accepted().json(MessageResponse {
+                message: "Message recieved successfully",
+                message_id: message_id
+            });
 
             let saved_response = save_response(transaction, &idempotency_key, None, response)
                 .await
@@ -179,21 +187,11 @@ pub async fn post_message(
         }
         Err(e) => {
             if e.to_string().contains("Duplicate messaged detected") {
-                Err(MessageError::DuplicateMessage.into())
+                Err(MessageError::DuplicateMessage(anyhow::anyhow!("Duplicate message detected")).into())
             } else {
                 tracing::error!("Failed to save message: {:?}", e);
                 Err(MessageError::UnexpectedError(e.into()).into())
             }
         }
     }
-}
-
-// this seems maybe unnecessary
-fn email_validator(email: &String) -> Result<String, ValidationError> {
-    validate_email(email)
-        .map(|validated| validated.normalized)
-        .map_err(|e| {
-            tracing::warn!("Email validation failed for '{}': {:?}", email, e);
-            e
-        })
 }

@@ -3,7 +3,7 @@ CREATE TABLE message_rate_limits (
     email TEXT PRIMARY KEY,
     message_count INT NOT NULL DEFAULT 1,
     window_start timestamptz NOT NULL,
-    last_message_at
+    last_message_at timestamptz NOT NULL
 );
 
 -- check and update email rate limit
