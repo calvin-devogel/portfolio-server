@@ -1,6 +1,7 @@
 use actix_web::{HttpResponse, HttpRequest, http::StatusCode, ResponseError, web};
-use emval::{validate_email};
-use sqlx::{PgPool};
+use email_address::EmailAddress;
+use sqlx::{PgPool, Postgres, Transaction};
+use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::idempotency::{IdempotencyKey, try_processing, save_response, NextAction};
@@ -26,15 +27,15 @@ pub enum MessageError {
 impl ResponseError for MessageError {
     fn status_code(&self) -> StatusCode {
         match self {
-            MessageError::InvalidEmail(_) |
-            MessageError::MessageLengthError(_) |
-            MessageError::NameLengthError(_) |
-            MessageError::MissingIdempotencyKey(_) => {
+            Self::InvalidEmail(_) |
+            Self::MessageLengthError(_) |
+            Self::NameLengthError(_) |
+            Self::MissingIdempotencyKey(_) => {
                 StatusCode::BAD_REQUEST
             }
-            MessageError::RateLimitExceeded(_) => StatusCode::TOO_MANY_REQUESTS,
-            MessageError::DuplicateMessage(_) => StatusCode::CONFLICT,
-            MessageError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR
+            Self::RateLimitExceeded(_) => StatusCode::TOO_MANY_REQUESTS,
+            Self::DuplicateMessage(_) => StatusCode::CONFLICT,
+            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
@@ -60,24 +61,32 @@ struct ValidatedMessage {
 
 impl MessageForm {
     fn validate(&self) -> Result<ValidatedMessage, MessageError> {
-        let normalized_email = validate_email(&self.email)
-            .map(|email| email.normalized)
+        // emval is bloated and we don't need it
+        // use email_address instead
+        // let normalized_email = validate_email(&self.email)
+        //     .map(|email| email.normalized)
+        //     .map_err(|e| MessageError::InvalidEmail(
+        //         anyhow::anyhow!("Invalid email: {e:?}")
+        //     ))?;
+        let validated_email = EmailAddress::from_str(&self.email)
+            .map(|r| r.email().to_string())
             .map_err(|e| MessageError::InvalidEmail(
-                anyhow::anyhow!("Invalid email: {:?}", e)
+                anyhow::anyhow!("Invalid email: {e:?}")
             ))?;
 
-        let trimmed_name = self.validate_name(&self.sender_name)?;
-        let trimmed_message = self.validate_message(&self.message_text)?;
+        
+        let trimmed_name = self.validate_name()?;
+        let trimmed_message = self.validate_message()?;
 
         Ok(ValidatedMessage {
-            email: normalized_email,
+            email: validated_email,
             sender_name: trimmed_name,
             message_text: trimmed_message
         })
     }
 
-    fn validate_name(&self, name: &String) -> Result<String, MessageError> {
-        let trimmed_name = name.trim();
+    fn validate_name(&self) -> Result<String, MessageError> {
+        let trimmed_name = self.sender_name.trim();
         if trimmed_name.len() < 2 || trimmed_name.len() > 100 {
             return Err(MessageError::NameLengthError(
                 anyhow::anyhow!("Name must be between 2 an 100 characters.")
@@ -87,8 +96,8 @@ impl MessageForm {
         Ok(trimmed_name.to_string())
     }
 
-    fn validate_message(&self, message: &String) -> Result<String, MessageError> {
-        let trimmed_message = message.trim();
+    fn validate_message(&self) -> Result<String, MessageError> {
+        let trimmed_message = self.message_text.trim();
         if trimmed_message.len() < 10 || trimmed_message.len() > 5000 {
             return Err(MessageError::MessageLengthError(
                 anyhow::anyhow!("Message must be between 10 and 5000 characters.")
@@ -121,33 +130,44 @@ pub async fn post_message(
         .try_into()
         .map_err(|e| {
             tracing::error!("Invalid idempotency key {:?}", e);
-            MessageError::MissingIdempotencyKey(anyhow::anyhow!("Invalid idempotency key format: {:?}", e))
+            MessageError::MissingIdempotencyKey(anyhow::anyhow!("Invalid idempotency key format: {e:?}"))
         })?;
+    
+    let validated_input = message.0.validate()?;
 
     let next_action = try_processing(&pool, &idempotency_key, None)
         .await
         .map_err(MessageError::UnexpectedError)?;
 
-    let transaction = match next_action {
-        NextAction::StartProcessing(txn) => txn,
-        NextAction::ReturnSavedResponse(saved_response)  => {
+    match next_action {
+        NextAction::ReturnSavedResponse(saved_response) => {
             tracing::info!("Returning saved response for idempotent request");
-            return Ok(saved_response);
+            Ok(saved_response)
         }
-    };
+        NextAction::StartProcessing(transaction) => {
+            process_new_message(transaction, &pool, &idempotency_key, validated_input).await
+        }
+    }
+    
+}
 
-    let validated_input = message.0.validate()?;
-
+// consume the transaction immediately for Send safety
+async fn process_new_message(
+    transaction: Transaction<'static, Postgres>,
+    pool: &PgPool,
+    idempotency_key: &IdempotencyKey,
+    validated_input: ValidatedMessage
+) -> Result<HttpResponse, actix_web::Error> {
     let rate_ok = sqlx::query_scalar!(
         "SELECT check_email_rate_limit($1, $2, $3)",
         validated_input.email,
         3,
         60
     )
-    .fetch_one(pool.get_ref())
+    .fetch_one(pool)
     .await
     .map_err(|e| MessageError::UnexpectedError(
-        anyhow::anyhow!("Unexpected error: {:?}", e)
+        anyhow::anyhow!("Unexpected error: {e:?}")
     ))?
     .unwrap_or(false);
 
@@ -160,15 +180,15 @@ pub async fn post_message(
     let message_id = Uuid::new_v4();
     let result = sqlx::query!(
         r#"
-        INSERT INTO messages (message_id, email, sender_name, message_text, created_at)
+        INSERT INTO messages(message_id, email, sender_name, message_text, created_at)
         VALUES ($1, $2, $3, $4, NOW())
         "#,
         message_id,
         validated_input.email,
         validated_input.sender_name,
-        validated_input.message_text,
+        validated_input.message_text
     )
-    .execute(pool.get_ref())
+    .execute(pool)
     .await;
 
     match result {
@@ -176,20 +196,20 @@ pub async fn post_message(
             tracing::info!("Message saved successfully with: {}", message_id);
             let response = HttpResponse::Accepted().json(MessageResponse {
                 message: "Message recieved successfully",
-                message_id: message_id
+                message_id
             });
 
-            let saved_response = save_response(transaction, &idempotency_key, None, response)
+            let saved_response = save_response(transaction, idempotency_key, None, response)
                 .await
-                .map_err(|e| MessageError::UnexpectedError(e.into()))?;
+                .map_err(MessageError::UnexpectedError)?;
             
             Ok(saved_response)
         }
         Err(e) => {
-            if e.to_string().contains("Duplicate messaged detected") {
+            if e.to_string().contains("Duplicate message detected") {
                 Err(MessageError::DuplicateMessage(anyhow::anyhow!("Duplicate message detected")).into())
             } else {
-                tracing::error!("Failed to save message: {:?}", e);
+                tracing::error!("Failed to save message: {e:?}");
                 Err(MessageError::UnexpectedError(e.into()).into())
             }
         }

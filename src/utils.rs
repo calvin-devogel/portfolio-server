@@ -17,12 +17,14 @@ where
 }
 
 // redirect (don't think I need this on the server side, probably have to send a signal?)
+#[must_use]
 pub fn see_other(location: &str) -> HttpResponse {
     HttpResponse::SeeOther()
         .insert_header((LOCATION, location))
         .finish()
 }
 
+#[must_use]
 pub fn unauthorized() -> HttpResponse {
     HttpResponse::Unauthorized().finish()
 }

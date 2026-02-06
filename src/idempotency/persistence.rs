@@ -67,11 +67,11 @@ pub async fn save_response(
     let (response_head, body) = http_response.into_parts();
     // MessageBody::Error is not `Send` + `Sync`
     // -> it does not play nicely with `anyhow`
-    let body = to_bytes(body).await.map_err(|e| anyhow::anyhow!("{}", e))?;
-    let status_code = response_head.status().as_u16() as i16;
+    let body = to_bytes(body).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+    let status_code = response_head.status().as_u16().cast_signed();
     let headers = {
         let mut h = Vec::with_capacity(response_head.headers().len());
-        for (name, value) in response_head.headers().iter() {
+        for (name, value) in response_head.headers() {
             let name = name.as_str().to_owned();
             let value = value.as_bytes().to_owned();
             h.push(HeaderPairRecord { name, value });
