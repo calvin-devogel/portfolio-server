@@ -173,8 +173,8 @@ async fn process_new_message(
     let message_id = Uuid::new_v4();
     let result = sqlx::query!(
         r#"
-        INSERT INTO messages(message_id, email, sender_name, message_text, created_at)
-        VALUES ($1, $2, $3, $4, NOW())
+        INSERT INTO messages(message_id, email, sender_name, message_text, created_at, read_message)
+        VALUES ($1, $2, $3, $4, NOW(), FALSE)
         "#,
         message_id,
         validated_input.email,
