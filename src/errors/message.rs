@@ -59,3 +59,17 @@ impl ResponseError for ContactSubmissionError {
         HttpResponse::build(status).json(error)
     }
 }
+
+#[derive(thiserror::Error, Debug)]
+pub enum MessageGetError {
+    #[error("Failed to get message count")]
+    TotalCount
+}
+
+impl ResponseError for MessageGetError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::TotalCount => StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}

@@ -20,6 +20,16 @@ struct MessageResponse {
     message_id: Uuid,
 }
 
+impl MessageResponse {
+    pub fn new(
+        message: &'static str,
+        message_id: Uuid) -> Self 
+    {
+        Self {message, message_id}
+    }
+}
+
+#[derive(PartialEq, Debug)]
 struct ValidatedMessage {
     email: String,
     sender_name: String,
@@ -105,7 +115,7 @@ pub async fn post_message(
     
     let validated_input = message.0.validate()?;
 
-    let next_action = try_processing(&pool, &idempotency_key, None)
+    let (next_action, transaction)  = try_processing(&pool, &idempotency_key, None)
         .await
         .map_err(|e| {
             tracing::warn!(error = ?e, "Idempotent processing failed");
@@ -117,7 +127,8 @@ pub async fn post_message(
             tracing::info!("Returning saved response for idempotent request");
             Ok(saved_response)
         }
-        NextAction::StartProcessing(transaction) => {
+        NextAction::StartProcessing => {
+            let transaction = transaction.expect("Transaction must be present for StartProcessing");
             process_new_message(transaction, &pool, &idempotency_key, validated_input).await
         }
     }
@@ -165,10 +176,7 @@ async fn process_new_message(
     match result {
         Ok(_) => {
             tracing::info!("Message saved successfully with: {}", message_id);
-            let response = HttpResponse::Accepted().json(MessageResponse {
-                message: "Message recieved successfully",
-                message_id
-            });
+            let response = HttpResponse::Accepted().json(MessageResponse::new("Message recieved successfully", message_id));
 
             let saved_response = save_response(transaction, idempotency_key, None, response)
                 .await
@@ -185,5 +193,50 @@ async fn process_new_message(
                 Err(ContactSubmissionError::UnexpectedError(e.into()).into())
             }
         }
+    }
+}
+
+// unit tests
+#[cfg(test)]
+mod test {
+    use crate::errors::ContactSubmissionError;
+    use super::MessageForm;
+
+    #[test]
+    fn message_form_validation_works() {
+        let form_with_bad_email = MessageForm {
+            email: "bademail".to_string(),
+            sender_name: "John Doe".to_string(),
+            message_text: "This is a test message.".to_string()
+        };
+
+        let mut result = form_with_bad_email.validate();
+        assert!(matches!(result, Err(ContactSubmissionError::InvalidEmail)));
+
+        let form_with_bad_name = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "N".to_string(),
+            message_text: "This is a test message".to_string()
+        };
+
+        result = form_with_bad_name.validate();
+        assert!(matches!(result, Err(ContactSubmissionError::NameLength)));
+
+        let form_with_bad_message = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "John Doe".to_string(),
+            message_text: "T".to_string()
+        };
+
+        result = form_with_bad_message.validate();
+        assert!(matches!(result, Err(ContactSubmissionError::MessageLength)));
+
+        let good_form = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "John Doe".to_string(),
+            message_text: "This is a test message".to_string(),
+        }.validate();
+
+        assert!(good_form.is_ok());
     }
 }

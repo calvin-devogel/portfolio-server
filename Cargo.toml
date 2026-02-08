@@ -21,9 +21,9 @@ actix-web-flash-messages = { version = "0.5", features = ["cookies"] }
 actix-web-ratelimit = "0.1"
 argon2 = { version = "0.5.3", features = ["std"] }
 anyhow = "1.0.101"
-chrono = { version = "0.4.43", default-features = false, features = ["clock"] }
+chrono = { version = "0.4.43", default-features = false, features = ["clock", "serde"] }
 config = "0.15.19"
-reqwest = { version = "0.13.1", default-features = false, features = [
+reqwest = { version = "0.13", default-features = false, features = [
     "json",
     "default-tls",
     "cookies",

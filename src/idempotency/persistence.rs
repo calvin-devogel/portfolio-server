@@ -14,8 +14,9 @@ struct HeaderPairRecord {
 // determines what to do with the incoming request
 #[allow(clippy::large_enum_variant)]
 pub enum NextAction {
-    // first time seeing this request, proceed
-    StartProcessing(Transaction<'static, Postgres>),
+    // first time seeing this request, proceed without holding the transaction
+    // transactions are not send-safe so we need to consume them immediately
+    StartProcessing,
     // already processed, return the cached response
     ReturnSavedResponse(HttpResponse),
 }
@@ -27,7 +28,7 @@ pub async fn try_processing(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
-) -> Result<NextAction, anyhow::Error> {
+) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), anyhow::Error> {
     let mut transaction = pool.begin().await?;
     let query = sqlx::query!(
         r#"
@@ -44,17 +45,17 @@ pub async fn try_processing(
     );
     let n_inserted_rows = transaction.execute(query).await?.rows_affected();
     if n_inserted_rows > 0 {
-        Ok(NextAction::StartProcessing(transaction))
+        Ok((NextAction::StartProcessing, Some(transaction)))
     } else {
         let saved_response = get_saved_response(pool, idempotency_key, user_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("We expected a saved response, we didn't find it"))?;
-        Ok(NextAction::ReturnSavedResponse(saved_response))
+        Ok((NextAction::ReturnSavedResponse(saved_response), None))
     }
 }
 
 // deconstruct response into head + body
-// converts teh body to bytes (since response streams can't be replayed)
+// converts the body to bytes (since response streams can't be replayed)
 // stores status code, headers, and body in the database
 // commits the transaction
 // returns HttpResponse
@@ -111,7 +112,7 @@ pub async fn save_response(
     Ok(http_response)
 }
 
-// queries teh database for saved Response data
+// queries the database for saved Response data
 // reconstructs the HttpResponse for saved response data
 // returns `None` if not found
 pub async fn get_saved_response(
