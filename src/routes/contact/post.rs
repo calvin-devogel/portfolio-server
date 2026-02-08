@@ -1,44 +1,11 @@
-use actix_web::{HttpResponse, HttpRequest, http::StatusCode, ResponseError, web};
+use actix_web::{HttpResponse, HttpRequest, web};
 use email_address::EmailAddress;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::idempotency::{IdempotencyKey, try_processing, save_response, NextAction};
-
-#[derive(thiserror::Error, Debug)]
-pub enum MessageError {
-    #[error("Invalid email address")]
-    InvalidEmail(#[source] anyhow::Error),
-    #[error("Message does not fit length constraints (10-5000 characters)")]
-    MessageLengthError(#[source] anyhow::Error),
-    #[error("Name does not fit length constraints (2-100 characters)")]
-    NameLengthError(#[source] anyhow::Error),
-    #[error("Rate limit exceeded")]
-    RateLimitExceeded(#[source] anyhow::Error),
-    #[error("Duplicate message detected")]
-    DuplicateMessage(#[source] anyhow::Error),
-    #[error("Missing idempotency key")] // this is likely unnecessary but idk
-    MissingIdempotencyKey(#[source] anyhow::Error),
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
-}
-
-impl ResponseError for MessageError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            Self::InvalidEmail(_) |
-            Self::MessageLengthError(_) |
-            Self::NameLengthError(_) |
-            Self::MissingIdempotencyKey(_) => {
-                StatusCode::BAD_REQUEST
-            }
-            Self::RateLimitExceeded(_) => StatusCode::TOO_MANY_REQUESTS,
-            Self::DuplicateMessage(_) => StatusCode::CONFLICT,
-            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR
-        }
-    }
-}
+use crate::errors::ContactSubmissionError;
 
 #[derive(serde::Deserialize)]
 pub struct MessageForm {
@@ -60,12 +27,17 @@ struct ValidatedMessage {
 }
 
 impl MessageForm {
-    fn validate(&self) -> Result<ValidatedMessage, MessageError> {
+    fn validate(&self) -> Result<ValidatedMessage, ContactSubmissionError> {
         let validated_email = EmailAddress::from_str(&self.email)
             .map(|r| r.email())
-            .map_err(|e| MessageError::InvalidEmail(
-                anyhow::anyhow!("Invalid email: {e:?}")
-            ))?;
+            .map_err(|e| {
+                tracing::warn!(
+                    email = %self.email,
+                    error = ?e,
+                    "Email validation failed'"
+                );
+                ContactSubmissionError::InvalidEmail
+            })?;
 
         
         let trimmed_name = self.validate_name()?;
@@ -78,23 +50,27 @@ impl MessageForm {
         })
     }
 
-    fn validate_name(&self) -> Result<String, MessageError> {
+    fn validate_name(&self) -> Result<String, ContactSubmissionError> {
         let trimmed_name = self.sender_name.trim();
         if trimmed_name.len() < 2 || trimmed_name.len() > 100 {
-            return Err(MessageError::NameLengthError(
-                anyhow::anyhow!("Name must be between 2 an 100 characters.")
-            ));
+            tracing::warn!(
+                name_length = trimmed_name.len(),
+                "Name validation failed: length out of bounds"
+            );
+            return Err(ContactSubmissionError::NameLength);
         }
 
         Ok(trimmed_name.to_string())
     }
 
-    fn validate_message(&self) -> Result<String, MessageError> {
+    fn validate_message(&self) -> Result<String, ContactSubmissionError> {
         let trimmed_message = self.message_text.trim();
         if trimmed_message.len() < 10 || trimmed_message.len() > 5000 {
-            return Err(MessageError::MessageLengthError(
-                anyhow::anyhow!("Message must be between 10 and 5000 characters.")
-            ));
+            tracing::warn!(
+                message_length = trimmed_message.len(),
+                "Message validation failed: length out of bound"
+            );
+            return Err(ContactSubmissionError::MessageLength);
         }
 
         Ok(trimmed_message.to_string())
@@ -116,21 +92,25 @@ pub async fn post_message(
         .headers()
         .get("Idempotency-Key")
         .and_then(|header| header.to_str().ok())
-        .ok_or_else(|| MessageError::MissingIdempotencyKey(
-            anyhow::anyhow!("Idempotency-Key header is missing")
-        ))?
+        .ok_or_else(|| {
+            tracing::warn!("Missing Idempotency-Key header");
+            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Missing idempotency key"))
+        })?
         .to_string()
         .try_into()
         .map_err(|e| {
-            tracing::error!("Invalid idempotency key {:?}", e);
-            MessageError::MissingIdempotencyKey(anyhow::anyhow!("Invalid idempotency key format: {e:?}"))
+            tracing::warn!(error = ?e, "Invalid idempotency key format");
+            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Invalid idempotency key"))
         })?;
     
     let validated_input = message.0.validate()?;
 
     let next_action = try_processing(&pool, &idempotency_key, None)
         .await
-        .map_err(MessageError::UnexpectedError)?;
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Idempotent processing failed");
+            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Idempotent processing failed"))
+        })?;
 
     match next_action {
         NextAction::ReturnSavedResponse(saved_response) => {
@@ -159,15 +139,13 @@ async fn process_new_message(
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| MessageError::UnexpectedError(
+    .map_err(|e| ContactSubmissionError::UnexpectedError(
         anyhow::anyhow!("Unexpected error: {e:?}")
     ))?
     .unwrap_or(false);
 
     if !rate_ok {
-        return Err(MessageError::RateLimitExceeded(
-            anyhow::anyhow!("Rate limit exceeded")).into()
-        );
+        return Err(ContactSubmissionError::RateLimitExceeded.into());
     }
 
     let message_id = Uuid::new_v4();
@@ -194,16 +172,17 @@ async fn process_new_message(
 
             let saved_response = save_response(transaction, idempotency_key, None, response)
                 .await
-                .map_err(MessageError::UnexpectedError)?;
+                .map_err(ContactSubmissionError::UnexpectedError)?;
             
             Ok(saved_response)
         }
         Err(e) => {
             if e.to_string().contains("Duplicate message detected") {
-                Err(MessageError::DuplicateMessage(anyhow::anyhow!("Duplicate message detected")).into())
+                tracing::warn!("Duplicate message detected");
+                Err(ContactSubmissionError::DuplicateMessage.into())
             } else {
                 tracing::error!("Failed to save message: {e:?}");
-                Err(MessageError::UnexpectedError(e.into()).into())
+                Err(ContactSubmissionError::UnexpectedError(e.into()).into())
             }
         }
     }
