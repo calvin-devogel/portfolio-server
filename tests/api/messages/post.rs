@@ -1,5 +1,11 @@
 use crate::helpers::spawn_app;
 
+#[derive(serde::Deserialize, Debug)]
+struct MessageResponse {
+    message: Option<String>,
+    message_id: Option<String>,
+}
+
 #[tokio::test]
 async fn can_post_messages() {
     // arrange
@@ -16,6 +22,12 @@ async fn can_post_messages() {
 
     // assert
     assert_eq!(response.status().as_u16(), 202);
+
+    let message_body: MessageResponse = response.json().await
+        .expect("Failed to deserialize error response.");
+
+    assert!(message_body.message.expect("Something went wrong").contains("Message recieved successfully"));
+    assert!(message_body.message_id.is_some());
 }
 
 #[tokio::test]
@@ -31,11 +43,11 @@ async fn duplicate_messages_are_not_accepted() {
     app.post_message(&message).await;
     let response = app.post_message(&message).await;
 
-    assert_eq!(response.status().as_u16(), 409)
+    assert_eq!(response.status().as_u16(), 409);
 }
 
 #[tokio::test]
-async fn invalid_message_emails_are_rejected() {
+async fn invalid_emails_are_rejected() {
     let app = spawn_app().await;
     let message = serde_json::json!({
         "email": "fake",
@@ -45,7 +57,7 @@ async fn invalid_message_emails_are_rejected() {
 
     let response = app.post_message(&message).await;
 
-    assert_eq!(response.status().as_u16(), 400)
+    assert_eq!(response.status().as_u16(), 400);
 }
 
 #[tokio::test]

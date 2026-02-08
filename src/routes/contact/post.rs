@@ -44,7 +44,7 @@ impl MessageForm {
                 tracing::warn!(
                     email = %self.email,
                     error = ?e,
-                    "Email validation failed'"
+                    "Email validation failed"
                 );
                 ContactSubmissionError::InvalidEmail
             })?;
@@ -219,7 +219,17 @@ mod test {
             message_text: "This is a test message".to_string()
         };
 
+
         result = form_with_bad_name.validate();
+        assert!(matches!(result, Err(ContactSubmissionError::NameLength)));
+
+        let form_with_whitespace_name = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "   ".to_string(),
+            message_text: "This is a test message".to_string()
+        };
+
+        result = form_with_whitespace_name.validate();
         assert!(matches!(result, Err(ContactSubmissionError::NameLength)));
 
         let form_with_bad_message = MessageForm {
