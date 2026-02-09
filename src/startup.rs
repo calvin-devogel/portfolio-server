@@ -32,7 +32,10 @@ impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
-        sqlx::migrate!("./migrations").run(&connection_pool).await?;
+        sqlx::migrate!("./migrations")
+            .set_ignore_missing(true)
+            .run(&connection_pool)
+            .await?;
 
         let address = format!(
             "{}:{}",
