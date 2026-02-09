@@ -130,8 +130,9 @@ impl TestApp {
     }
 
     pub async fn post_message<Body>(&self, body: &Body) -> reqwest::Response
-    where 
-        Body: serde::Serialize {
+    where
+        Body: serde::Serialize,
+    {
         self.api_client
             .post(&format!("{}/api/contact", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())

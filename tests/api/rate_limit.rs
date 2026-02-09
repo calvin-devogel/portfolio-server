@@ -1,40 +1,23 @@
-use std::time::Duration;
-
 use crate::helpers::spawn_app;
+use std::sync::Arc;
 
 #[tokio::test]
-async fn rate_limit_middleware_prevents_client_from_exceeding_the_request_limit() {
-    // arrange
-    let app = spawn_app().await;
+async fn login_rate_limit_prevents_brute_force() {
+    let app = Arc::new(spawn_app().await);
+    let bad_login = serde_json::json!({
+        "username": app.test_user.username,
+        "password": "wrong_password"
+    });
 
-    // act: make a bunch of rapid-fire requests
-    for _ in 0..15 {
-        let _res = app.generic_request().await.status();
-    }
+    // run requests sequentially with no delay
+    let response1 = app.post_login(&bad_login).await;
+    println!("Request 1: {}", response1.status());
 
-    // check response on fourth request
-    let response = app.generic_request().await;
+    let response2 = app.post_login(&bad_login).await;
+    println!("Request 2: {}", response2.status());
 
-    assert_eq!(response.status().as_u16(), 429);
-}
+    let response3 = app.post_login(&bad_login).await;
+    println!("Request 3: {}", response3.status());
 
-#[tokio::test]
-async fn rate_limit_resets_after_window_passes() {
-    // arrange
-    let app = spawn_app().await;
-
-    // act 1: make a bunch of rapid-fire requests
-    let mut res = app.generic_request().await;
-    for _ in 0..9 {
-        res = app.generic_request().await;
-    }
-
-    assert_eq!(res.status().as_u16(), 429);
-
-    // act 2: wait a few seconds, then make another request
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    let response = app.generic_request().await;
-
-    // assert
-    assert_eq!(response.status().as_u16(), 200);
+    assert_eq!(response3.status().as_u16(), 429);
 }

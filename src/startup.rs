@@ -1,4 +1,4 @@
-use actix_limitation::{Limiter};
+use actix_limitation::Limiter;
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 use actix_web::{App, HttpServer, cookie::Key, dev::Server, middleware::from_fn, web, web::Data};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
@@ -8,15 +8,9 @@ use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
-use crate::configuration::{DatabaseSettings, LoginRateLimitSettings, Settings};
+use crate::configuration::{DatabaseSettings, RateLimitSettings, Settings};
 use crate::routes::{
-    check_auth,
-    health_check,
-    login,
-    logout,
-    test_reject,
-    post_message,
-    get_messages
+    check_auth, get_messages, health_check, login, logout, post_message, test_reject,
 };
 
 // wrapper type for SecretString
@@ -38,9 +32,7 @@ impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
-        sqlx::migrate!("./migrations")
-            .run(&connection_pool)
-            .await?;
+        sqlx::migrate!("./migrations").run(&connection_pool).await?;
 
         let address = format!(
             "{}:{}",
@@ -55,7 +47,7 @@ impl Application {
             configuration.application.base_url,
             configuration.application.hmac_secret,
             configuration.redis_uri,
-            configuration.rate_limit.login,
+            configuration.rate_limit,
         )
         .await?;
 
@@ -82,7 +74,7 @@ async fn run(
     base_url: String,
     hmac_secret: SecretString,
     redis_uri: SecretString,
-    rate_config: LoginRateLimitSettings
+    rate_config: RateLimitSettings,
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
@@ -92,10 +84,12 @@ async fn run(
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
     let limiter = Data::new(
         Limiter::builder(redis_uri.expose_secret())
-        .limit(rate_config.max_requests)
-        .period(std::time::Duration::from_secs(rate_config.window_secs))
-        .build()
-        .expect("Failed to build rate limiter")
+            .limit(rate_config.login.max_requests)
+            .period(std::time::Duration::from_secs(
+                rate_config.login.window_secs,
+            ))
+            .build()
+            .expect("Failed to build rate limiter"),
     );
     let server = HttpServer::new(move || {
         App::new()
@@ -115,11 +109,12 @@ async fn run(
                 web::scope("/api/admin")
                     .wrap(from_fn(reject_anonymous_users))
                     .route("/test", web::get().to(test_reject))
-                    .route("/messages", web::get().to(get_messages))
+                    .route("/messages", web::get().to(get_messages)),
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
+            .app_data(Data::new(rate_config.message.clone()))
             .app_data(limiter.clone())
     })
     .listen(listener)?

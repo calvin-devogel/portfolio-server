@@ -1,12 +1,12 @@
-use actix_web::{HttpResponse, HttpRequest, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use email_address::EmailAddress;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::idempotency::{IdempotencyKey, try_processing, save_response, NextAction};
-use crate::errors::ContactSubmissionError;
 use crate::configuration::MessageRateLimitSettings;
+use crate::errors::ContactSubmissionError;
+use crate::idempotency::{IdempotencyKey, NextAction, save_response, try_processing};
 
 #[derive(serde::Deserialize)]
 pub struct MessageForm {
@@ -22,11 +22,11 @@ struct MessageResponse {
 }
 
 impl MessageResponse {
-    pub fn new(
-        message: &'static str,
-        message_id: Uuid) -> Self 
-    {
-        Self {message, message_id}
+    pub const fn new(message: &'static str, message_id: Uuid) -> Self {
+        Self {
+            message,
+            message_id,
+        }
     }
 }
 
@@ -50,14 +50,13 @@ impl MessageForm {
                 ContactSubmissionError::InvalidEmail
             })?;
 
-        
         let trimmed_name = self.validate_name()?;
         let trimmed_message = self.validate_message()?;
 
         Ok(ValidatedMessage {
             email: validated_email,
             sender_name: trimmed_name,
-            message_text: trimmed_message
+            message_text: trimmed_message,
         })
     }
 
@@ -114,10 +113,10 @@ pub async fn post_message(
             tracing::warn!(error = ?e, "Invalid idempotency key format");
             ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Invalid idempotency key"))
         })?;
-    
+
     let validated_input = message.0.validate()?;
 
-    let (next_action, transaction)  = try_processing(&pool, &idempotency_key, None)
+    let (next_action, transaction) = try_processing(&pool, &idempotency_key, None)
         .await
         .map_err(|e| {
             tracing::warn!(error = ?e, "Idempotent processing failed");
@@ -131,10 +130,16 @@ pub async fn post_message(
         }
         NextAction::StartProcessing => {
             let transaction = transaction.expect("Transaction must be present for StartProcessing");
-            process_new_message(transaction, &pool, &idempotency_key, validated_input, &message_config).await
+            process_new_message(
+                transaction,
+                &pool,
+                &idempotency_key,
+                validated_input,
+                &message_config,
+            )
+            .await
         }
     }
-    
 }
 
 // consume the transaction immediately for Send safety
@@ -148,14 +153,14 @@ async fn process_new_message(
     let rate_ok = sqlx::query_scalar!(
         "SELECT check_email_rate_limit($1, $2, $3)",
         validated_input.email,
-        config.max_messages as i32,
-        config.window_minutes as i32
+        i32::try_from(config.max_messages).expect("Failed to cast config.max_messages"),
+        i32::try_from(config.window_minutes).expect("Failed to cast config.window_minutes")
     )
     .fetch_one(pool)
     .await
-    .map_err(|e| ContactSubmissionError::UnexpectedError(
-        anyhow::anyhow!("Unexpected error: {e:?}")
-    ))?
+    .map_err(|e| {
+        ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}"))
+    })?
     .unwrap_or(false);
 
     if !rate_ok {
@@ -179,12 +184,15 @@ async fn process_new_message(
     match result {
         Ok(_) => {
             tracing::info!("Message saved successfully with: {}", message_id);
-            let response = HttpResponse::Accepted().json(MessageResponse::new("Message recieved successfully", message_id));
+            let response = HttpResponse::Accepted().json(MessageResponse::new(
+                "Message recieved successfully",
+                message_id,
+            ));
 
             let saved_response = save_response(transaction, idempotency_key, None, response)
                 .await
                 .map_err(ContactSubmissionError::UnexpectedError)?;
-            
+
             Ok(saved_response)
         }
         Err(e) => {
@@ -202,15 +210,15 @@ async fn process_new_message(
 // unit tests
 #[cfg(test)]
 mod test {
-    use crate::errors::ContactSubmissionError;
     use super::MessageForm;
+    use crate::errors::ContactSubmissionError;
 
     #[test]
     fn message_form_validation_works() {
         let form_with_bad_email = MessageForm {
             email: "bademail".to_string(),
             sender_name: "John Doe".to_string(),
-            message_text: "This is a test message.".to_string()
+            message_text: "This is a test message.".to_string(),
         };
 
         let mut result = form_with_bad_email.validate();
@@ -219,9 +227,8 @@ mod test {
         let form_with_bad_name = MessageForm {
             email: "test@email.com".to_string(),
             sender_name: "N".to_string(),
-            message_text: "This is a test message".to_string()
+            message_text: "This is a test message".to_string(),
         };
-
 
         result = form_with_bad_name.validate();
         assert!(matches!(result, Err(ContactSubmissionError::NameLength)));
@@ -229,7 +236,7 @@ mod test {
         let form_with_whitespace_name = MessageForm {
             email: "test@email.com".to_string(),
             sender_name: "   ".to_string(),
-            message_text: "This is a test message".to_string()
+            message_text: "This is a test message".to_string(),
         };
 
         result = form_with_whitespace_name.validate();
@@ -238,7 +245,7 @@ mod test {
         let form_with_bad_message = MessageForm {
             email: "test@email.com".to_string(),
             sender_name: "John Doe".to_string(),
-            message_text: "T".to_string()
+            message_text: "T".to_string(),
         };
 
         result = form_with_bad_message.validate();
@@ -248,7 +255,8 @@ mod test {
             email: "test@email.com".to_string(),
             sender_name: "John Doe".to_string(),
             message_text: "This is a test message".to_string(),
-        }.validate();
+        }
+        .validate();
 
         assert!(good_form.is_ok());
     }

@@ -1,5 +1,5 @@
-use actix_limitation::{Limiter};
-use actix_web::{HttpResponse, error::InternalError, web};
+use actix_limitation::Limiter;
+use actix_web::{HttpResponse, ResponseError, error::InternalError, web};
 use secrecy::SecretString;
 use sqlx::PgPool;
 
@@ -27,14 +27,15 @@ pub async fn login(
     let rate_limit_key = format!("login:{}", request.username);
 
     match limiter.count(rate_limit_key).await {
-        Ok(result) if result.remaining() < 1 => {
-            return Err(login_redirect(AuthError::RateLimitExceeded))
+        Ok(result) if result.remaining() == 0 => {
+            return Err(login_error(AuthError::RateLimitExceeded));
         }
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
             tracing::error!("Rate limiter error: {e:?}");
         }
-    };
+    }
+
     let credentials = Credentials {
         username: request.username.clone(),
         password: request.password.clone(),
@@ -48,7 +49,7 @@ pub async fn login(
             session.renew();
             session
                 .insert_user_id(user_id)
-                .map_err(|e| login_redirect(AuthError::UnexpectedError(e.into())))?;
+                .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
 
             Ok(HttpResponse::Ok().finish())
         }
@@ -58,7 +59,7 @@ pub async fn login(
                 AuthError::InvalidCredentials(_) => AuthError::InvalidCredentials(e.into()),
                 AuthError::UnexpectedError(_) => AuthError::UnexpectedError(e.into()),
             };
-            Err(login_redirect(e))
+            Err(login_error(e))
         }
     }
 }
@@ -69,6 +70,7 @@ pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Er
     Ok(HttpResponse::Ok().finish())
 }
 
-fn login_redirect(e: AuthError) -> InternalError<AuthError> {
-    InternalError::from_response(e, HttpResponse::Unauthorized().finish())
+fn login_error(e: AuthError) -> InternalError<AuthError> {
+    let response = HttpResponse::build(e.status_code()).finish();
+    InternalError::from_response(e, response)
 }

@@ -15,10 +15,10 @@ pub struct MessageQuery {
     #[serde(default)]
     page: i64,
     #[serde(default = "default_page_size")]
-    page_size: i64
+    page_size: i64,
 }
 
-fn default_page_size() -> i64 {
+const fn default_page_size() -> i64 {
     20
 }
 
@@ -55,16 +55,14 @@ pub async fn get_messages(
     let offset = page * page_size;
 
     // total count
-    let total_count = sqlx::query_scalar!(
-        "SELECT COUNT(*) FROM messages"
-    )
-    .fetch_one(pool.as_ref())
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to get message count: {e:?}");
-        actix_web::error::ErrorInternalServerError("Failed to retrieve message count")
-    })? // come back to this just get it written
-    .unwrap_or(0);
+    let total_count = sqlx::query_scalar!("SELECT COUNT(*) FROM messages")
+        .fetch_one(pool.as_ref())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get message count: {e:?}");
+            actix_web::error::ErrorInternalServerError("Failed to retrieve message count")
+        })? // come back to this just get it written
+        .unwrap_or(0);
 
     let messages = sqlx::query_as!(
         MessageRecord,

@@ -55,7 +55,7 @@ pub struct RateLimitSettings {
     #[serde(default = "default_login_rate_limit")]
     pub login: LoginRateLimitSettings,
     #[serde(default = "default_message_rate_limit")]
-    pub message: MessageRateLimitSettings
+    pub message: MessageRateLimitSettings,
 }
 
 impl Default for RateLimitSettings {
@@ -83,12 +83,18 @@ pub struct MessageRateLimitSettings {
     pub window_minutes: usize,
 }
 
-fn default_login_rate_limit() -> LoginRateLimitSettings {
-    LoginRateLimitSettings { max_requests: 3, window_secs: 10 }
+const fn default_login_rate_limit() -> LoginRateLimitSettings {
+    LoginRateLimitSettings {
+        max_requests: 3,
+        window_secs: 10,
+    }
 }
 
-fn default_message_rate_limit() -> MessageRateLimitSettings {
-    MessageRateLimitSettings { max_messages: 3, window_minutes: 60 }
+const fn default_message_rate_limit() -> MessageRateLimitSettings {
+    MessageRateLimitSettings {
+        max_messages: 3,
+        window_minutes: 60,
+    }
 }
 
 #[derive(serde::Deserialize, Clone)]

@@ -1,16 +1,14 @@
-use actix_web::{ResponseError, http::StatusCode, HttpResponse};
+use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 
 #[derive(serde::Serialize)]
 struct ErrorMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
-    message: Option<String>
+    message: Option<String>,
 }
 
 impl ErrorMessage {
-    const fn new(
-        message: Option<String>,
-    ) -> Self {
-        Self {message}
+    const fn new(message: Option<String>) -> Self {
+        Self { message }
     }
 }
 
@@ -34,8 +32,12 @@ impl ContactSubmissionError {
     fn to_message_error(&self) -> Option<ErrorMessage> {
         match self {
             Self::InvalidEmail => Some(ErrorMessage::new(Some("Invalid email".to_string()))),
-            Self::MessageLength => Some(ErrorMessage::new(Some("Message must be between 10 and 5000 characters".to_string()))),
-            Self::NameLength => Some(ErrorMessage::new(Some("Name must be between 2 and 100 characters.".to_string()))),
+            Self::MessageLength => Some(ErrorMessage::new(Some(
+                "Message must be between 10 and 5000 characters".to_string(),
+            ))),
+            Self::NameLength => Some(ErrorMessage::new(Some(
+                "Name must be between 2 and 100 characters.".to_string(),
+            ))),
             Self::RateLimitExceeded | Self::DuplicateMessage | Self::UnexpectedError(_) => None,
         }
     }
@@ -44,9 +46,7 @@ impl ContactSubmissionError {
 impl ResponseError for ContactSubmissionError {
     fn status_code(&self) -> StatusCode {
         match self {
-            Self::InvalidEmail | Self::MessageLength | Self::NameLength => {
-                StatusCode::BAD_REQUEST
-            }
+            Self::InvalidEmail | Self::MessageLength | Self::NameLength => StatusCode::BAD_REQUEST,
             Self::RateLimitExceeded => StatusCode::TOO_MANY_REQUESTS,
             Self::DuplicateMessage => StatusCode::CONFLICT,
             Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -63,13 +63,13 @@ impl ResponseError for ContactSubmissionError {
 #[derive(thiserror::Error, Debug)]
 pub enum MessageGetError {
     #[error("Failed to get message count")]
-    TotalCount
+    TotalCount,
 }
 
 impl ResponseError for MessageGetError {
     fn status_code(&self) -> StatusCode {
         match self {
-            Self::TotalCount => StatusCode::INTERNAL_SERVER_ERROR
+            Self::TotalCount => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

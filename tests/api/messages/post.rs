@@ -23,10 +23,17 @@ async fn can_post_messages() {
     // assert
     assert_eq!(response.status().as_u16(), 202);
 
-    let message_body: MessageResponse = response.json().await
+    let message_body: MessageResponse = response
+        .json()
+        .await
         .expect("Failed to deserialize error response.");
 
-    assert!(message_body.message.expect("Something went wrong").contains("Message recieved successfully"));
+    assert!(
+        message_body
+            .message
+            .expect("Something went wrong")
+            .contains("Message recieved successfully")
+    );
     assert!(message_body.message_id.is_some());
 }
 
