@@ -1,3 +1,4 @@
+use actix_web::{ResponseError, http::StatusCode};
 use anyhow::Context;
 use argon2::{
     Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version,
@@ -10,10 +11,22 @@ use crate::telemetry::spawn_blocking_with_tracing;
 
 #[derive(thiserror::Error, Debug)]
 pub enum AuthError {
+    #[error("Too many login requests")]
+    RateLimitExceeded,
     #[error("Invalid credentials")]
     InvalidCredentials(#[source] anyhow::Error),
     #[error(transparent)]
     UnexpectedError(#[from] anyhow::Error),
+}
+
+impl ResponseError for AuthError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::RateLimitExceeded => StatusCode::TOO_MANY_REQUESTS,
+            Self::InvalidCredentials(_) => StatusCode::UNAUTHORIZED,
+            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
 }
 
 pub struct Credentials {

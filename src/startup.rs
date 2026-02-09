@@ -1,16 +1,14 @@
+use actix_limitation::{Limiter};
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
-// add `middleware::from_fn, web,` once you start creating routes
 use actix_web::{App, HttpServer, cookie::Key, dev::Server, middleware::from_fn, web, web::Data};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
-use actix_web_ratelimit::{RateLimit, config::RateLimitConfig, store::MemoryStore};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
-use std::sync::Arc;
 use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
-use crate::configuration::{DatabaseSettings, RateLimitSettings, Settings};
+use crate::configuration::{DatabaseSettings, LoginRateLimitSettings, Settings};
 use crate::routes::{
     check_auth,
     health_check,
@@ -57,7 +55,7 @@ impl Application {
             configuration.application.base_url,
             configuration.application.hmac_secret,
             configuration.redis_uri,
-            configuration.rate_limit,
+            configuration.rate_limit.login,
         )
         .await?;
 
@@ -84,7 +82,7 @@ async fn run(
     base_url: String,
     hmac_secret: SecretString,
     redis_uri: SecretString,
-    rate_limit_settings: RateLimitSettings,
+    rate_config: LoginRateLimitSettings
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
@@ -92,10 +90,13 @@ async fn run(
     let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
-    let rate_config = RateLimitConfig::default()
-        .max_requests(rate_limit_settings.login.max_requests)
-        .window_secs(rate_limit_settings.login.window_secs);
-    let rate_store = Arc::new(MemoryStore::new());
+    let limiter = Data::new(
+        Limiter::builder(redis_uri.expose_secret())
+        .limit(rate_config.max_requests)
+        .period(std::time::Duration::from_secs(rate_config.window_secs))
+        .build()
+        .expect("Failed to build rate limiter")
+    );
     let server = HttpServer::new(move || {
         App::new()
             .wrap(message_framework.clone())
@@ -103,7 +104,6 @@ async fn run(
                 redis_store.clone(),
                 secret_key.clone(),
             ))
-            .wrap(RateLimit::new(rate_config.clone(), rate_store.clone()))
             .wrap(TracingLogger::default())
             // inconsistent - vs _ on heatlh_check and check-auth, fix please
             .route("/health_check", web::get().to(health_check))
@@ -120,7 +120,7 @@ async fn run(
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
-            .app_data(Data::new(rate_limit_settings.message.clone()))
+            .app_data(limiter.clone())
     })
     .listen(listener)?
     .run();

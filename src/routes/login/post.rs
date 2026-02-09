@@ -1,9 +1,10 @@
+use actix_limitation::{Limiter};
 use actix_web::{HttpResponse, error::InternalError, web};
-// use actix_web_flash_messages::FlashMessage;
-use crate::authentication::{AuthError, Credentials, validate_credentials};
-use crate::session_state::TypedSession;
 use secrecy::SecretString;
 use sqlx::PgPool;
+
+use crate::authentication::{AuthError, Credentials, validate_credentials};
+use crate::session_state::TypedSession;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct LoginRequest {
@@ -21,7 +22,19 @@ pub async fn login(
     request: web::Form<LoginRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
+    limiter: web::Data<Limiter>,
 ) -> Result<HttpResponse, InternalError<AuthError>> {
+    let rate_limit_key = format!("login:{}", request.username);
+
+    match limiter.count(rate_limit_key).await {
+        Ok(result) if result.remaining() < 1 => {
+            return Err(login_redirect(AuthError::RateLimitExceeded))
+        }
+        Ok(_) => {},
+        Err(e) => {
+            tracing::error!("Rate limiter error: {e:?}");
+        }
+    };
     let credentials = Credentials {
         username: request.username.clone(),
         password: request.password.clone(),
@@ -41,6 +54,7 @@ pub async fn login(
         }
         Err(e) => {
             let e = match e {
+                AuthError::RateLimitExceeded => AuthError::RateLimitExceeded,
                 AuthError::InvalidCredentials(_) => AuthError::InvalidCredentials(e.into()),
                 AuthError::UnexpectedError(_) => AuthError::UnexpectedError(e.into()),
             };
