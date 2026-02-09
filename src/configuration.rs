@@ -37,6 +37,8 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub redis_uri: SecretString,
+    #[serde(default)]
+    pub rate_limit: RateLimitSettings,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -46,6 +48,53 @@ pub struct ApplicationSettings {
     pub host: String,
     pub base_url: String,
     pub hmac_secret: SecretString,
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct RateLimitSettings {
+    #[serde(default = "default_login_rate_limit")]
+    pub login: LoginRateLimitSettings,
+    #[serde(default = "default_message_rate_limit")]
+    pub message: MessageRateLimitSettings,
+}
+
+impl Default for RateLimitSettings {
+    fn default() -> Self {
+        Self {
+            login: default_login_rate_limit(),
+            message: default_message_rate_limit(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct LoginRateLimitSettings {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub max_requests: usize,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub window_secs: u64,
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct MessageRateLimitSettings {
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub max_messages: usize,
+    #[serde(deserialize_with = "deserialize_number_from_string")]
+    pub window_minutes: usize,
+}
+
+const fn default_login_rate_limit() -> LoginRateLimitSettings {
+    LoginRateLimitSettings {
+        max_requests: 3,
+        window_secs: 10,
+    }
+}
+
+const fn default_message_rate_limit() -> MessageRateLimitSettings {
+    MessageRateLimitSettings {
+        max_messages: 3,
+        window_minutes: 60,
+    }
 }
 
 #[derive(serde::Deserialize, Clone)]

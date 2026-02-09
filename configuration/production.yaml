@@ -2,3 +2,10 @@ application:
   host: 0.0.0.0
 database:
   require_ssl: true
+rate_limit:
+  login:
+    max_request: 3
+    window_secs: 10
+  message:
+    max_messages: 3
+    window_minutes: 60
