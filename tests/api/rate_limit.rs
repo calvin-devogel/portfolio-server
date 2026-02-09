@@ -32,7 +32,7 @@ async fn rate_limit_resets_after_window_passes() {
     assert_eq!(res.status().as_u16(), 429);
 
     // act 2: wait a few seconds, then make another request
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
     let response = app.generic_request().await;
 
     // assert

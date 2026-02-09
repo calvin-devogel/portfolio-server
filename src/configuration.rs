@@ -37,6 +37,8 @@ pub struct Settings {
     pub database: DatabaseSettings,
     pub application: ApplicationSettings,
     pub redis_uri: SecretString,
+    #[serde(default)]
+    pub rate_limit: RateLimitSettings,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -68,7 +70,7 @@ impl Default for RateLimitSettings {
 #[derive(serde::Deserialize, Clone)]
 pub struct LoginRateLimitSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
-    pub max_requests: u64,
+    pub max_requests: usize,
     #[serde(deserialize_with = "deserialize_number_from_string")]
     pub window_secs: u64,
 }
@@ -76,9 +78,9 @@ pub struct LoginRateLimitSettings {
 #[derive(serde::Deserialize, Clone)]
 pub struct MessageRateLimitSettings {
     #[serde(deserialize_with = "deserialize_number_from_string")]
-    pub max_messages: i32,
+    pub max_messages: usize,
     #[serde(deserialize_with = "deserialize_number_from_string")]
-    pub window_minutes: i32,
+    pub window_minutes: usize,
 }
 
 fn default_login_rate_limit() -> LoginRateLimitSettings {

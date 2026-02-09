@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 use crate::idempotency::{IdempotencyKey, try_processing, save_response, NextAction};
 use crate::errors::ContactSubmissionError;
+use crate::configuration::MessageRateLimitSettings;
 
 #[derive(serde::Deserialize)]
 pub struct MessageForm {
@@ -89,13 +90,14 @@ impl MessageForm {
 
 #[tracing::instrument(
     name = "Send message to contact table",
-    skip(message, pool, request),
+    skip(message, pool, request, message_config),
     fields(email = %message.email)
 )]
 pub async fn post_message(
     message: web::Form<MessageForm>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
+    message_config: web::Data<MessageRateLimitSettings>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // get the idempotency key (generated client-side)
     let idempotency_key: IdempotencyKey = request
@@ -129,7 +131,7 @@ pub async fn post_message(
         }
         NextAction::StartProcessing => {
             let transaction = transaction.expect("Transaction must be present for StartProcessing");
-            process_new_message(transaction, &pool, &idempotency_key, validated_input).await
+            process_new_message(transaction, &pool, &idempotency_key, validated_input, &message_config).await
         }
     }
     
@@ -140,13 +142,14 @@ async fn process_new_message(
     transaction: Transaction<'static, Postgres>,
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
-    validated_input: ValidatedMessage
+    validated_input: ValidatedMessage,
+    config: &MessageRateLimitSettings,
 ) -> Result<HttpResponse, actix_web::Error> {
     let rate_ok = sqlx::query_scalar!(
         "SELECT check_email_rate_limit($1, $2, $3)",
         validated_input.email,
-        3,
-        60
+        config.max_messages as i32,
+        config.window_minutes as i32
     )
     .fetch_one(pool)
     .await

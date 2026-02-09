@@ -10,8 +10,16 @@ use std::sync::Arc;
 use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
-use crate::configuration::{DatabaseSettings, Settings};
-use crate::routes::{check_auth, health_check, login, logout, test_reject, post_message, get_messages};
+use crate::configuration::{DatabaseSettings, RateLimitSettings, Settings};
+use crate::routes::{
+    check_auth,
+    health_check,
+    login,
+    logout,
+    test_reject,
+    post_message,
+    get_messages
+};
 
 // wrapper type for SecretString
 #[derive(Clone)]
@@ -49,6 +57,7 @@ impl Application {
             configuration.application.base_url,
             configuration.application.hmac_secret,
             configuration.redis_uri,
+            configuration.rate_limit,
         )
         .await?;
 
@@ -75,6 +84,7 @@ async fn run(
     base_url: String,
     hmac_secret: SecretString,
     redis_uri: SecretString,
+    rate_limit_settings: RateLimitSettings,
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
@@ -82,7 +92,9 @@ async fn run(
     let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
-    let rate_config = RateLimitConfig::default().max_requests(3).window_secs(10);
+    let rate_config = RateLimitConfig::default()
+        .max_requests(rate_limit_settings.login.max_requests)
+        .window_secs(rate_limit_settings.login.window_secs);
     let rate_store = Arc::new(MemoryStore::new());
     let server = HttpServer::new(move || {
         App::new()
@@ -108,6 +120,7 @@ async fn run(
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
+            .app_data(Data::new(rate_limit_settings.message.clone()))
     })
     .listen(listener)?
     .run();

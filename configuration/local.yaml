@@ -3,3 +3,10 @@ application:
   base_url: "http://127.0.0.1"
 database:
   require_ssl: false
+rate_limit:
+  login:
+    max_requests: 3
+    window_secs: 1
+  message:
+    max_messages: 3
+    window_minutes: 1

@@ -143,7 +143,7 @@ impl TestApp {
 
     pub async fn get_messages(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/admin/messages", &self.address))
+            .get(&format!("{}/api/admin/messages", &self.address))
             .send()
             .await
             .expect("Failed to get messages.")
