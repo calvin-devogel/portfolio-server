@@ -15,9 +15,9 @@ serde_json = "1.0.61"
 tokio = { version = "1", features = ["rt"]}
 
 [dependencies]
-actix-limitation = "0.5"
+actix-limitation = { version = "0.5" }
 actix-session = { version = "0.11", features = ["redis-session-rustls"]}
-actix-web = "4.12"
+actix-web = { version = "4.12", features = ["rustls"] }
 actix-web-flash-messages = { version = "0.5", features = ["cookies"] }
 argon2 = { version = "0.5.3", features = ["std"] }
 anyhow = "1.0.101"
