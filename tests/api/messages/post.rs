@@ -32,7 +32,7 @@ async fn can_post_messages() {
         message_body
             .message
             .expect("Something went wrong")
-            .contains("Message recieved successfully")
+            .contains("Message received successfully")
     );
     assert!(message_body.message_id.is_some());
 }
@@ -58,7 +58,7 @@ async fn invalid_emails_are_rejected() {
     let app = spawn_app().await;
     let message = serde_json::json!({
         "email": "fake",
-        "name": "John Doe",
+        "sender_name": "John Doe",
         "message_text": "Message text."
     });
 

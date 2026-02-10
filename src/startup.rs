@@ -1,4 +1,3 @@
-use actix_limitation::Limiter;
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 use actix_web::{App, HttpServer, cookie::Key, dev::Server, middleware::from_fn, web, web::Data};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
@@ -86,15 +85,6 @@ async fn run(
     let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
-    let limiter = Data::new(
-        Limiter::builder(redis_uri.expose_secret())
-            .limit(rate_config.login.max_requests)
-            .period(std::time::Duration::from_secs(
-                rate_config.login.window_secs,
-            ))
-            .build()
-            .expect("Failed to build rate limiter"),
-    );
     let server = HttpServer::new(move || {
         App::new()
             .wrap(message_framework.clone())
@@ -119,7 +109,6 @@ async fn run(
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
             .app_data(Data::new(rate_config.message.clone()))
-            .app_data(limiter.clone())
     })
     .listen(listener)?
     .run();

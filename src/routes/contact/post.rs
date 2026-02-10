@@ -185,7 +185,7 @@ async fn process_new_message(
         Ok(_) => {
             tracing::info!("Message saved successfully with: {}", message_id);
             let response = HttpResponse::Accepted().json(MessageResponse::new(
-                "Message recieved successfully",
+                "Message received successfully",
                 message_id,
             ));
 

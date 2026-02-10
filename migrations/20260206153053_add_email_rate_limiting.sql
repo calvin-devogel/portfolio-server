@@ -29,7 +29,7 @@ BEGIN
             window_start = NOW(),
             last_message_at = NOW();
         RETURN TRUE;
-    ELSEIF v_count >= p_max_messages THEN
+    ELSIF v_count >= p_max_messages THEN
         RETURN FALSE;
     ELSE
         UPDATE message_rate_limits

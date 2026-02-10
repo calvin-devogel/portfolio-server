@@ -5,4 +5,3 @@ mod idempotency;
 mod login;
 mod logout;
 mod messages;
-mod rate_limit;

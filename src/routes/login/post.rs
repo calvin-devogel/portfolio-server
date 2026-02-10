@@ -1,4 +1,3 @@
-use actix_limitation::Limiter;
 use actix_web::{HttpResponse, ResponseError, error::InternalError, web};
 use secrecy::SecretString;
 use sqlx::PgPool;
@@ -22,20 +21,7 @@ pub async fn login(
     request: web::Form<LoginRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
-    limiter: web::Data<Limiter>,
 ) -> Result<HttpResponse, InternalError<AuthError>> {
-    let rate_limit_key = format!("login:{}", request.username);
-
-    match limiter.count(rate_limit_key).await {
-        Ok(result) if result.remaining() == 0 => {
-            return Err(login_error(AuthError::RateLimitExceeded));
-        }
-        Ok(_) => {}
-        Err(e) => {
-            tracing::error!("Rate limiter error: {e:?}");
-        }
-    }
-
     let credentials = Credentials {
         username: request.username.clone(),
         password: request.password.clone(),
