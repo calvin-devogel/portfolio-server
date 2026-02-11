@@ -3,6 +3,10 @@ application:
   base_url: "http://127.0.0.1"
 database:
   require_ssl: false
+cors:
+  allowed_origins:
+    - "http://localhost:4200"
+  max_age: 3600
 rate_limit:
   login:
     max_requests: 3
