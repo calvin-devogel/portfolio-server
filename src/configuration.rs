@@ -39,6 +39,7 @@ pub struct Settings {
     pub redis_uri: SecretString,
     #[serde(default)]
     pub rate_limit: RateLimitSettings,
+    pub cors: CorsSettings,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -124,6 +125,12 @@ impl DatabaseSettings {
             .ssl_mode(ssl_mode)
             .database(&self.database_name)
     }
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct CorsSettings {
+    pub allowed_origins: Vec<String>,
+    pub max_age: usize,
 }
 
 #[allow(clippy::missing_errors_doc)]
