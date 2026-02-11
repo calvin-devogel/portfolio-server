@@ -1,9 +1,11 @@
 application:
   port: 8000
+  # this is not a real secret, the actual key is provided via an environment variable in production
   hmac_secret: "long-and-very-secret-random-key-needed-to-verify-message-integrity"
 database:
   host: "localhost"
   port: 5432
+  # similarly, these are not real keys, the prod values are in the prod environment
   username: "postgres"
   password: "password"
   database_name: "portfolio"
