@@ -5,6 +5,7 @@ database:
 cors:
   allowed_origins:
     - "https://devogel.dev"
+  max_age: 3600
 rate_limit:
   login:
     max_requests: 3
