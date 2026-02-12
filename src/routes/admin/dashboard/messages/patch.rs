@@ -1,6 +1,145 @@
-use actix_web::HttpResponse;
+use actix_web::{HttpResponse, HttpRequest, web};
+use sqlx::{PgPool, Postgres, Transaction};
+use uuid::Uuid;
 
-#[tracing::instrument(name = "Update messages")]
-pub async fn patch_messages() -> HttpResponse {
-    HttpResponse::Ok().finish()
+use crate::{
+    authentication::{AuthError, UserId},
+    errors::MessagePatchError, 
+    idempotency::{
+        IdempotencyKey, NextAction, save_response, try_processing}
+};
+
+#[derive(serde::Deserialize)]
+pub struct MessagePatchRequest {
+    message_id: Uuid,
+    read: bool,
+}
+
+#[tracing::instrument(
+    name = "Update message",
+    skip_all,
+    fields(user_id = %*user_id, message_id = %message.message_id)
+)]
+pub async fn patch_message(
+    message: web::Json<MessagePatchRequest>,
+    user_id: web::ReqData<UserId>,
+    request: HttpRequest,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, actix_web::Error> {
+    // this should probably be moved somewhere it can be accessed by all idempotency-users
+    let idempotency_key: IdempotencyKey = request
+        .headers()
+        .get("Idempotency-Key")
+        .and_then(|header| header.to_str().ok())
+        .ok_or_else(|| {
+            tracing::warn!("Missing Idempotency-Key header");
+            MessagePatchError::UnexpectedError(anyhow::anyhow!("Missing idempotency key"))
+        })?
+        .to_string()
+        .try_into()
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Invalid idempotency key format");
+            MessagePatchError::UnexpectedError(anyhow::anyhow!("Invalid idempotency key"))
+        })?;
+    let message_to_patch = message.0;
+    let user_id = Some(**user_id);
+
+    let (next_action, transaction) = try_processing(&pool, &idempotency_key, user_id)
+        .await
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Idempotent processing failed");
+            MessagePatchError::UnexpectedError(anyhow::anyhow!("Idempotent processing failed"))
+        })?;
+
+    match next_action {
+        NextAction::ReturnSavedResponse(saved_response) => {
+            tracing::info!("Returning saved response for idempotent request");
+            Ok(saved_response)
+        }
+        NextAction::StartProcessing => {
+            let transaction = transaction.expect("Transaction must be present for StartProcessing");
+            process_patch_message(
+                transaction,
+                &pool,
+                &idempotency_key,
+                message_to_patch,
+                user_id
+            )
+            .await
+        }
+    }
+}
+
+#[tracing::instrument(
+    name = "Verify admin access",
+    skip(pool),
+    fields(user_id = %user_id)
+)]
+async fn verify_admin(user_id: Uuid, pool: &PgPool) -> Result<(), AuthError> {
+    let username = sqlx::query!(
+        r#"
+        SELECT username
+        FROM users
+        WHERE user_id = $1
+        "#,
+        user_id
+    )
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| {
+        tracing::error!("Database Error!");
+        AuthError::UnexpectedError(e.into())
+    })?
+    .ok_or_else(|| {
+        tracing::warn!("User not found in the database");
+        AuthError::InvalidCredentials(anyhow::anyhow!("User not found."))
+    })?;
+
+    if username.username != "admin" {
+        tracing::warn!("Non-admin user attempted admin action");
+        return Err(AuthError::InvalidCredentials(anyhow::anyhow!("Insufficient permissions")));
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::future_not_send)]
+async fn process_patch_message(
+    transaction: Transaction<'static, Postgres>,
+    pool: &PgPool,
+    idempotency_key: &IdempotencyKey,
+    message: MessagePatchRequest,
+    user_id: Option<Uuid>
+) -> Result<HttpResponse, actix_web::Error> {
+    let message_id = message.message_id;
+    let is_read = message.read;
+
+    let result = sqlx::query!(
+        r#"
+        UPDATE messages
+        SET read_message = $2
+        WHERE message_id = $1
+        "#,
+        message_id,
+        is_read
+    )
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => {
+            tracing::info!("Message {} updated successfully", message_id);
+            let response = HttpResponse::Accepted().finish();
+
+            let saved_response = save_response(transaction, idempotency_key, user_id, response)
+                .await
+                .map_err(MessagePatchError::UnexpectedError)?;
+
+            Ok(saved_response)
+        }
+        Err(e) => {
+            tracing::error!("Failed to save message: {e:?}");
+            Err(MessagePatchError::UnexpectedError(e.into()).into())
+        }
+    }
 }
