@@ -12,7 +12,7 @@ use tracing_actix_web::TracingLogger;
 use crate::authentication::reject_anonymous_users;
 use crate::configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings};
 use crate::routes::{
-    check_auth, get_messages, health_check, login, logout, post_message, test_reject,
+    check_auth, get_messages, health_check, login, logout, post_message, test_reject, root
 };
 
 // wrapper type for SecretString
@@ -109,7 +109,7 @@ async fn run(
                     .supports_credentials()
                     .max_age(cors.max_age),
             )
-            // inconsistent - vs _ on heatlh_check and check-auth, fix please
+            .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
             .route("/api/login", web::post().to(login))
             .route("/api/logout", web::post().to(logout))
