@@ -34,12 +34,6 @@ impl Application {
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
-        // there *must* be a way to make this work correctly
-        // sqlx::migrate!("./migrations")
-        //     .set_ignore_missing(true)
-        //     .run(&connection_pool)
-        //     .await?;
-
         let address = format!(
             "{}:{}",
             configuration.application.host, configuration.application.port,
@@ -119,7 +113,7 @@ async fn run(
             .route("/health_check", web::get().to(health_check))
             .route("/api/login", web::post().to(login))
             .route("/api/logout", web::post().to(logout))
-            .route("/api/check-auth", web::get().to(check_auth))
+            .route("/api/check_auth", web::get().to(check_auth))
             .route("/api/contact", web::post().to(post_message))
             .service(
                 web::scope("/api/admin")
