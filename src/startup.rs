@@ -12,7 +12,7 @@ use tracing_actix_web::TracingLogger;
 use crate::authentication::reject_anonymous_users;
 use crate::configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings};
 use crate::routes::{
-    check_auth, get_messages, health_check, login, logout, post_message, test_reject, root
+    check_auth, get_messages, health_check, login, logout, post_message, test_reject, root, patch_messages
 };
 
 // wrapper type for SecretString
@@ -124,7 +124,8 @@ async fn run(
                 web::scope("/api/admin")
                     .wrap(from_fn(reject_anonymous_users))
                     .route("/test", web::get().to(test_reject))
-                    .route("/messages", web::get().to(get_messages)),
+                    .route("/messages", web::get().to(get_messages))
+                    .route("/messages", web::patch().to(patch_messages))
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())

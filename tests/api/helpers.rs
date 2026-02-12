@@ -107,7 +107,7 @@ impl TestApp {
 
     pub async fn check_auth(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/api/check-auth", &self.address))
+            .get(&format!("{}/api/check_auth", &self.address))
             .send()
             .await
             .expect("Failed to execute request")
