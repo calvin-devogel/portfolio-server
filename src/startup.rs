@@ -1,7 +1,7 @@
 use actix_cors::Cors;
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
 use actix_web::{
-    App, HttpServer, cookie::Key, dev::Server, http, middleware::from_fn, web, web::Data,
+    App, HttpServer, cookie::{Key, SameSite}, dev::Server, http, middleware::from_fn, web, web::Data,
 };
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
@@ -81,16 +81,21 @@ async fn run(
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
     let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
-    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
+    let message_store = CookieMessageStore::builder(secret_key.clone())
+        .same_site(SameSite::Strict)
+        .build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
     let server = HttpServer::new(move || {
         App::new()
             .wrap(message_framework.clone())
-            .wrap(SessionMiddleware::new(
-                redis_store.clone(),
-                secret_key.clone(),
-            ))
+            .wrap(
+                SessionMiddleware::builder(redis_store.clone(),secret_key.clone())
+                .cookie_same_site(SameSite::Strict)
+                .cookie_http_only(true)
+                .cookie_secure(true)
+                .build()
+            )
             .wrap(TracingLogger::default())
             .wrap(
                 Cors::default()
