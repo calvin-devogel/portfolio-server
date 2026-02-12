@@ -59,6 +59,7 @@ pub async fn try_processing(
 // stores status code, headers, and body in the database
 // commits the transaction
 // returns HttpResponse
+#[allow(clippy::future_not_send)]
 pub async fn save_response(
     mut transaction: Transaction<'static, Postgres>,
     idempotency_key: &IdempotencyKey,

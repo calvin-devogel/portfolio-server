@@ -142,6 +142,7 @@ pub async fn post_message(
     }
 }
 
+#[allow(clippy::future_not_send)]
 // consume the transaction immediately for Send safety
 async fn process_new_message(
     transaction: Transaction<'static, Postgres>,

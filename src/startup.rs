@@ -1,6 +1,8 @@
 use actix_cors::Cors;
 use actix_session::{SessionMiddleware, storage::RedisSessionStore};
-use actix_web::{App, HttpServer, http, cookie::Key, dev::Server, middleware::from_fn, web, web::Data};
+use actix_web::{
+    App, HttpServer, cookie::Key, dev::Server, http, middleware::from_fn, web, web::Data,
+};
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
@@ -52,7 +54,7 @@ impl Application {
             configuration.application.hmac_secret,
             configuration.redis_uri,
             configuration.rate_limit,
-            configuration.cors
+            configuration.cors,
         )
         .await?;
 
@@ -80,7 +82,7 @@ async fn run(
     hmac_secret: SecretString,
     redis_uri: SecretString,
     rate_config: RateLimitSettings,
-    cors: CorsSettings
+    cors: CorsSettings,
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
@@ -96,17 +98,22 @@ async fn run(
                 secret_key.clone(),
             ))
             .wrap(TracingLogger::default())
-            .wrap(Cors::default()
-                .allowed_origin(cors.allowed_origins.first().clone().expect("Failed to get allowed origin"))
-                .allowed_methods(vec!["GET", "POST"])
-                .allowed_headers(vec![
-                    http::header::AUTHORIZATION,
-                    http::header::ACCEPT,
-                    http::header::CONTENT_TYPE,
-                    http::header::HeaderName::from_static("idempotency-key"),
-                ])
-                .supports_credentials()
-                .max_age(cors.max_age)
+            .wrap(
+                Cors::default()
+                    .allowed_origin(
+                        cors.allowed_origins
+                            .first()
+                            .expect("Failed to get allowed origin"),
+                    )
+                    .allowed_methods(vec!["GET", "POST"])
+                    .allowed_headers(vec![
+                        http::header::AUTHORIZATION,
+                        http::header::ACCEPT,
+                        http::header::CONTENT_TYPE,
+                        http::header::HeaderName::from_static("idempotency-key"),
+                    ])
+                    .supports_credentials()
+                    .max_age(cors.max_age),
             )
             // inconsistent - vs _ on heatlh_check and check-auth, fix please
             .route("/health_check", web::get().to(health_check))

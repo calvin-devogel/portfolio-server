@@ -14,7 +14,9 @@ name = "portfolio-server"
 serde_json = "1.0.61"
 tokio = { version = "1", features = ["rt"]}
 
+
 [dependencies]
+console-subscriber = { version = "0.5"}
 actix-cors = "0.7"
 actix-limitation = { version = "0.5" }
 actix-session = { version = "0.11", features = ["redis-session-rustls"]}
@@ -30,7 +32,7 @@ reqwest = { version = "0.13", default-features = false, features = [
     "cookies",
     "form",
 ] }
-rustls = { version = "0.23.26", features = ["aws-lc-rs"] }
+rustls = { version = "0.23.36", features = ["aws-lc-rs"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = "1.0.228"
 serde-aux = "4.7.0"

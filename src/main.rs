@@ -15,9 +15,13 @@ async fn main() -> anyhow::Result<()> {
     // this might not be what's actually happening, but this does make auth work inside the container.
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
 
-    // start logging
-    let subscriber = get_subscriber("portfolio_server".into(), "info".into(), std::io::stdout);
-    init_subscriber(subscriber);
+    // start logging (or console?)
+    if std::env::var("TOKIO_CONSOLE").is_ok() {
+        console_subscriber::init();
+    } else {
+        let subscriber = get_subscriber("portfolio_server".into(), "info".into(), std::io::stdout);
+        init_subscriber(subscriber);
+    }
 
     let configuration = get_configuration().expect("Failed to read configuration.");
     let application = Application::build(configuration.clone()).await?;
