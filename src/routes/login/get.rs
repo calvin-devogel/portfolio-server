@@ -7,7 +7,11 @@ use crate::session_state::TypedSession;
 #[tracing::instrument(name = "Check if authenticated", skip(session))]
 pub async fn check_auth(session: TypedSession) -> HttpResponse {
     match session.get_user_id() {
-        Ok(Some(_)) => HttpResponse::Ok().finish(),
+        Ok(Some(_)) => {
+            // renew session on each check_auth to extend TTL
+            session.renew();
+            HttpResponse::Ok().finish()
+        },
         _ => HttpResponse::Unauthorized().finish(),
     }
 }

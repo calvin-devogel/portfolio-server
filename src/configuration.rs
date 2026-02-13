@@ -40,6 +40,7 @@ pub struct Settings {
     #[serde(default)]
     pub rate_limit: RateLimitSettings,
     pub cors: CorsSettings,
+    pub ttl: TtlSettings,
 }
 
 #[derive(serde::Deserialize, Clone)]
@@ -131,6 +132,12 @@ impl DatabaseSettings {
 pub struct CorsSettings {
     pub allowed_origins: Vec<String>,
     pub max_age: usize,
+}
+
+#[derive(serde::Deserialize, Clone)]
+pub struct TtlSettings {
+    pub ttl_hours: i64,
+    pub idle_timeout_minutes: i64
 }
 
 #[allow(clippy::missing_errors_doc)]

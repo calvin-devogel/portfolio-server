@@ -9,4 +9,7 @@ database:
   username: "postgres"
   password: "password"
   database_name: "portfolio"
+ttl:
+  ttl_hours: 1
+  idle_timeout_minutes: 15
 redis_uri: "redis://127.0.0.1:6379"

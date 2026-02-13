@@ -1,5 +1,5 @@
 use actix_cors::Cors;
-use actix_session::{SessionMiddleware, storage::RedisSessionStore};
+use actix_session::{SessionMiddleware, storage::RedisSessionStore, config::{PersistentSession, TtlExtensionPolicy}};
 use actix_web::{
     App, HttpServer, cookie::{Key, SameSite}, dev::Server, http, middleware::from_fn, web, web::Data,
 };
@@ -10,7 +10,7 @@ use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
-use crate::configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings};
+use crate::configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings};
 use crate::routes::{
     check_auth, get_messages, health_check, login, logout, post_message, test_reject, root, patch_message
 };
@@ -49,6 +49,7 @@ impl Application {
             configuration.redis_uri,
             configuration.rate_limit,
             configuration.cors,
+            configuration.ttl
         )
         .await?;
 
@@ -77,6 +78,7 @@ async fn run(
     redis_uri: SecretString,
     rate_config: RateLimitSettings,
     cors: CorsSettings,
+    ttl_config: TtlSettings
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
@@ -94,6 +96,13 @@ async fn run(
                 .cookie_same_site(SameSite::Strict)
                 .cookie_http_only(true)
                 .cookie_secure(true)
+                .session_lifecycle(
+                    PersistentSession::default()
+                        .session_ttl(actix_web::cookie::time::Duration::hours(ttl_config.ttl_hours))
+                        .session_ttl_extension_policy(
+                            TtlExtensionPolicy::OnEveryRequest
+                        )
+                )
                 .build()
             )
             .wrap(TracingLogger::default())
