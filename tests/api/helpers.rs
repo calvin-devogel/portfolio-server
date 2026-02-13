@@ -149,6 +149,20 @@ impl TestApp {
             .await
             .expect("Failed to get messages.")
     }
+
+    pub async fn patch_message<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize
+    {
+        self.api_client
+            .patch(&format!("{}/api/admin/messages", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to send message")
+           
+    }
 }
 
 pub async fn spawn_app() -> TestApp {

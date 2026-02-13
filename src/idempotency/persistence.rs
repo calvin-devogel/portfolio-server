@@ -1,3 +1,7 @@
+use actix_web::HttpRequest;
+
+use crate::authentication::AuthError;
+
 use super::IdempotencyKey;
 use actix_web::{HttpResponse, body::to_bytes, http::StatusCode};
 use sqlx::{Executor, PgPool, Postgres, Transaction};
@@ -152,3 +156,24 @@ pub async fn get_saved_response(
 // Request arrives -> `try_processing()` checks if it's been seen before
 // if new -> process the request -> cache result with `save_response()`
 // if duplicate -> `get_saved_response()` returns the cached result immediately
+
+pub fn get_idempotency_key(
+    request: HttpRequest,
+) -> Result<IdempotencyKey, actix_web::Error> {
+    let idempotency_key: IdempotencyKey = request
+        .headers()
+        .get("Idempotency-Key")
+        .and_then(|header| header.to_str().ok())
+        .ok_or_else(|| {
+            tracing::warn!("Missing Idempotency-Key header");
+            AuthError::UnexpectedError(anyhow::anyhow!("Missing idempotency key"))
+        })?
+        .to_string()
+        .try_into()
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Invalid idempotency key format");
+            AuthError::UnexpectedError(anyhow::anyhow!("Invalid idempotency key"))
+        })?;
+    
+    Ok(idempotency_key)
+}

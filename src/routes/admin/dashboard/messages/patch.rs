@@ -3,10 +3,10 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    authentication::{AuthError, UserId},
+    authentication::UserId,
     errors::MessagePatchError, 
     idempotency::{
-        IdempotencyKey, NextAction, save_response, try_processing}
+        IdempotencyKey, NextAction, save_response, try_processing, get_idempotency_key}
 };
 
 #[derive(serde::Deserialize)]
@@ -27,20 +27,7 @@ pub async fn patch_message(
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // this should probably be moved somewhere it can be accessed by all idempotency-users
-    let idempotency_key: IdempotencyKey = request
-        .headers()
-        .get("Idempotency-Key")
-        .and_then(|header| header.to_str().ok())
-        .ok_or_else(|| {
-            tracing::warn!("Missing Idempotency-Key header");
-            MessagePatchError::UnexpectedError(anyhow::anyhow!("Missing idempotency key"))
-        })?
-        .to_string()
-        .try_into()
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Invalid idempotency key format");
-            MessagePatchError::UnexpectedError(anyhow::anyhow!("Invalid idempotency key"))
-        })?;
+    let idempotency_key: IdempotencyKey = get_idempotency_key(request).expect("Missing or invalid idempotency key");
     let message_to_patch = message.0;
     let user_id = Some(**user_id);
 
@@ -68,39 +55,6 @@ pub async fn patch_message(
             .await
         }
     }
-}
-
-#[tracing::instrument(
-    name = "Verify admin access",
-    skip(pool),
-    fields(user_id = %user_id)
-)]
-async fn verify_admin(user_id: Uuid, pool: &PgPool) -> Result<(), AuthError> {
-    let username = sqlx::query!(
-        r#"
-        SELECT username
-        FROM users
-        WHERE user_id = $1
-        "#,
-        user_id
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Database Error!");
-        AuthError::UnexpectedError(e.into())
-    })?
-    .ok_or_else(|| {
-        tracing::warn!("User not found in the database");
-        AuthError::InvalidCredentials(anyhow::anyhow!("User not found."))
-    })?;
-
-    if username.username != "admin" {
-        tracing::warn!("Non-admin user attempted admin action");
-        return Err(AuthError::InvalidCredentials(anyhow::anyhow!("Insufficient permissions")));
-    }
-
-    Ok(())
 }
 
 #[allow(clippy::future_not_send)]
