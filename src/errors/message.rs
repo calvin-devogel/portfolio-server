@@ -73,3 +73,20 @@ impl ResponseError for MessageGetError {
         }
     }
 }
+
+#[derive(thiserror::Error, Debug)]
+pub enum MessagePatchError {
+    #[error("Message not found")]
+    MessageNotFound,
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
+}
+
+impl ResponseError for MessagePatchError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            Self::MessageNotFound => StatusCode::NOT_FOUND,
+            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}

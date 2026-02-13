@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::configuration::MessageRateLimitSettings;
 use crate::errors::ContactSubmissionError;
-use crate::idempotency::{IdempotencyKey, NextAction, save_response, try_processing};
+use crate::idempotency::{IdempotencyKey, NextAction, save_response, try_processing, get_idempotency_key};
 
 #[derive(serde::Deserialize)]
 pub struct MessageForm {
@@ -99,20 +99,7 @@ pub async fn post_message(
     message_config: web::Data<MessageRateLimitSettings>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // get the idempotency key (generated client-side)
-    let idempotency_key: IdempotencyKey = request
-        .headers()
-        .get("Idempotency-Key")
-        .and_then(|header| header.to_str().ok())
-        .ok_or_else(|| {
-            tracing::warn!("Missing Idempotency-Key header");
-            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Missing idempotency key"))
-        })?
-        .to_string()
-        .try_into()
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Invalid idempotency key format");
-            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Invalid idempotency key"))
-        })?;
+    let idempotency_key: IdempotencyKey = get_idempotency_key(request).expect("Failed to get idempotency key");
 
     let validated_input = message.0.validate()?;
 

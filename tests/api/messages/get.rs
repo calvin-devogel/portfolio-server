@@ -1,23 +1,5 @@
 use crate::helpers::spawn_app;
 
-#[derive(serde::Deserialize, Debug)]
-struct _MessageRecord {
-    message_id: uuid::Uuid,
-    email: String,
-    sender_name: String,
-    message_text: String,
-    created_at: chrono::DateTime<chrono::Utc>,
-    read_message: Option<bool>,
-}
-
-#[derive(serde::Deserialize, Debug)]
-struct _MessagesResponse {
-    messages: Vec<_MessageRecord>,
-    page: i64,
-    page_size: i64,
-    total_count: i64,
-}
-
 #[tokio::test]
 async fn authorized_user_can_query_messages() {
     // arrange
