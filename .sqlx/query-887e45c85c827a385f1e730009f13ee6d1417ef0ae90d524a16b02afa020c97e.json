@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE messages\n        SET read_message = $2\n        WHERE message_id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bool"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "887e45c85c827a385f1e730009f13ee6d1417ef0ae90d524a16b02afa020c97e"
+}
