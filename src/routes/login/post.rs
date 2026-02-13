@@ -2,7 +2,8 @@ use actix_web::{HttpResponse, ResponseError, error::InternalError, web};
 use secrecy::SecretString;
 use sqlx::PgPool;
 
-use crate::authentication::{AuthError, Credentials, validate_credentials};
+use crate::authentication::{Credentials, validate_credentials};
+use crate::errors::AuthError;
 use crate::session_state::TypedSession;
 
 #[derive(serde::Deserialize, Debug)]

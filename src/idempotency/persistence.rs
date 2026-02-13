@@ -1,6 +1,6 @@
 use actix_web::HttpRequest;
 
-use crate::authentication::AuthError;
+use crate::errors::AuthError;
 
 use super::IdempotencyKey;
 use actix_web::{HttpResponse, body::to_bytes, http::StatusCode};
@@ -157,6 +157,7 @@ pub async fn get_saved_response(
 // if new -> process the request -> cache result with `save_response()`
 // if duplicate -> `get_saved_response()` returns the cached result immediately
 
+// there are a few places where an idempotency key is required, use this wherever it is
 pub fn get_idempotency_key(
     request: HttpRequest,
 ) -> Result<IdempotencyKey, actix_web::Error> {
