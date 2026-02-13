@@ -89,7 +89,7 @@ async fn process_patch_message(
 
     match result.rows_affected() {
         1 => {
-            tracing::info!("MEssage {} updated successfully", message_id);
+            tracing::info!("Message {} updated successfully", message_id);
             let response = HttpResponse::Accepted().finish();
 
             let saved_response = save_response(transaction, idempotency_key, user_id, response)

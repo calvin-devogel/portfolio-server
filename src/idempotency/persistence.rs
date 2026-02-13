@@ -1,6 +1,6 @@
 use actix_web::HttpRequest;
 
-use crate::errors::AuthError;
+use crate::errors::IdempotencyError;
 
 use super::IdempotencyKey;
 use actix_web::{HttpResponse, body::to_bytes, http::StatusCode};
@@ -167,13 +167,13 @@ pub fn get_idempotency_key(
         .and_then(|header| header.to_str().ok())
         .ok_or_else(|| {
             tracing::warn!("Missing Idempotency-Key header");
-            AuthError::UnexpectedError(anyhow::anyhow!("Missing idempotency key"))
+            IdempotencyError::MissingIdempotencyKey
         })?
         .to_string()
         .try_into()
         .map_err(|e| {
             tracing::warn!(error = ?e, "Invalid idempotency key format");
-            AuthError::UnexpectedError(anyhow::anyhow!("Invalid idempotency key"))
+            IdempotencyError::InvalidKeyFormat
         })?;
     
     Ok(idempotency_key)
