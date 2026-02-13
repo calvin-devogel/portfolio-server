@@ -38,7 +38,7 @@ pub async fn patch_message(
         .await
         .map_err(|e| {
             tracing::warn!(error = ?e, "Idempotent processing failed");
-            MessagePatchError::UnexpectedError(anyhow::anyhow!("Idempotent processing failed"))
+            MessagePatchError::UnexpectedError(e.into())
         })?;
 
     match next_action {
