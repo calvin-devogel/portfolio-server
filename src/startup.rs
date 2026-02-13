@@ -104,7 +104,7 @@ async fn run(
                             .first()
                             .expect("Failed to get allowed origin"),
                     )
-                    .allowed_methods(vec!["GET", "POST"])
+                    .allowed_methods(vec!["GET", "POST", "PATCH"])
                     .allowed_headers(vec![
                         http::header::AUTHORIZATION,
                         http::header::ACCEPT,

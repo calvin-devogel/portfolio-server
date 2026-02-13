@@ -26,8 +26,11 @@ pub async fn patch_message(
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    // this should probably be moved somewhere it can be accessed by all idempotency-users
-    let idempotency_key: IdempotencyKey = get_idempotency_key(request).expect("Missing or invalid idempotency key");
+    let idempotency_key: IdempotencyKey = get_idempotency_key(request)
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Failed to get idempotency key");
+            MessagePatchError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key"))
+        })?;
     let message_to_patch = message.0;
     let user_id = Some(**user_id);
 
@@ -78,11 +81,15 @@ async fn process_patch_message(
         is_read
     )
     .execute(pool)
-    .await;
+    .await
+    .map_err(|e| {
+        tracing::warn!("Message update query failed");
+        MessagePatchError::UnexpectedError(anyhow::anyhow!("Message update query failed: {e:?}"))
+    })?;
 
-    match result {
-        Ok(_) => {
-            tracing::info!("Message {} updated successfully", message_id);
+    match result.rows_affected() {
+        1 => {
+            tracing::info!("MEssage {} updated successfully", message_id);
             let response = HttpResponse::Accepted().finish();
 
             let saved_response = save_response(transaction, idempotency_key, user_id, response)
@@ -91,9 +98,15 @@ async fn process_patch_message(
 
             Ok(saved_response)
         }
-        Err(e) => {
-            tracing::error!("Failed to save message: {e:?}");
-            Err(MessagePatchError::UnexpectedError(e.into()).into())
+        0 => {
+            tracing::warn!("Message not found: {}", message_id);
+            Err(MessagePatchError::MessageNotFound.into())
+        }
+        rows => {
+            tracing::error!("Unexpected rows affected: {} for message_id: {}", rows, message_id);
+            Err(MessagePatchError::UnexpectedError(
+                anyhow::anyhow!("Unexpected rows affected: {}", rows)
+            ).into())
         }
     }
 }

@@ -99,7 +99,11 @@ pub async fn post_message(
     message_config: web::Data<MessageRateLimitSettings>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // get the idempotency key (generated client-side)
-    let idempotency_key: IdempotencyKey = get_idempotency_key(request).expect("Failed to get idempotency key");
+    let idempotency_key: IdempotencyKey = get_idempotency_key(request)
+        .map_err(|e| {
+            tracing::warn!(error = ?e, "Failed to get idempotency key");
+            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key"))
+        })?;
 
     let validated_input = message.0.validate()?;
 
