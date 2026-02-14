@@ -3,6 +3,8 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::errors::MessageGetError;
+
 // query messages in page form, minimum 0, maximum 20 per page
 // on read, should set the message_read column to TRUE
 // admin should be able to delete, highlight (star) messages
@@ -60,8 +62,8 @@ pub async fn get_messages(
         .await
         .map_err(|e| {
             tracing::error!("Failed to get message count: {e:?}");
-            actix_web::error::ErrorInternalServerError("Failed to retrieve message count")
-        })? // come back to this just get it written
+            MessageGetError::TotalCount
+        })?
         .unwrap_or(0);
 
     let messages = sqlx::query_as!(

@@ -7,7 +7,7 @@ pub enum IdempotencyError {
     #[error("Invalid idempotency key format")]
     InvalidKeyFormat,
     #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error)
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl ResponseError for IdempotencyError {

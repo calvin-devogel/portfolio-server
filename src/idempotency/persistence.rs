@@ -158,9 +158,7 @@ pub async fn get_saved_response(
 // if duplicate -> `get_saved_response()` returns the cached result immediately
 
 // there are a few places where an idempotency key is required, use this wherever it is
-pub fn get_idempotency_key(
-    request: HttpRequest,
-) -> Result<IdempotencyKey, actix_web::Error> {
+pub fn get_idempotency_key(request: HttpRequest) -> Result<IdempotencyKey, actix_web::Error> {
     let idempotency_key: IdempotencyKey = request
         .headers()
         .get("Idempotency-Key")
@@ -175,6 +173,6 @@ pub fn get_idempotency_key(
             tracing::warn!(error = ?e, "Invalid idempotency key format");
             IdempotencyError::InvalidKeyFormat
         })?;
-    
+
     Ok(idempotency_key)
 }

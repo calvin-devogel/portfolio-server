@@ -1,7 +1,7 @@
 mod authentication;
-mod message;
 mod idempotency;
+mod message;
 
 pub use authentication::*;
-pub use message::*;
 pub use idempotency::*;
+pub use message::*;

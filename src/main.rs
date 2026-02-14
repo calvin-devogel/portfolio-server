@@ -16,15 +16,10 @@ async fn main() -> anyhow::Result<()> {
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
 
     // start logging (or console?)
-    if std::env::var("TOKIO_CONSOLE").is_ok() {
-        console_subscriber::init();
-    } else {
-        let subscriber = get_subscriber("portfolio_server".into(), "info".into(), std::io::stdout);
-        init_subscriber(subscriber);
-    }
+    init_tracing();
 
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let application = Application::build(configuration.clone()).await?;
+    let application = Application::build(configuration).await?;
     let application_task = tokio::spawn(application.run_until_stopped());
 
     // put a tokio-select in here when you're ready
@@ -33,6 +28,22 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(feature = "console")]
+fn init_tracing() {
+    if std::env::var("TOKIO_CONSOLE").is_ok() {
+        console_subscriber::init();
+    } else {
+        let subscriber = get_subscriber("portfolio_server".into(), "info".into(), std::io::stdout);
+        init_subscriber(subscriber);
+    }
+}
+
+#[cfg(not(feature = "console"))]
+fn init_tracing() {
+    let subscriber = get_subscriber("portfolio_server".into(), "info".into(), std::io::stdout);
+    init_subscriber(subscriber);
 }
 
 // return when the provided task exits (ie. when a background delivery worker finishes)

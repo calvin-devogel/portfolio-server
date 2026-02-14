@@ -137,7 +137,8 @@ pub struct CorsSettings {
 #[derive(serde::Deserialize, Clone)]
 pub struct TtlSettings {
     pub ttl_hours: i64,
-    pub idle_timeout_minutes: i64
+    // hey, this isn't referenced anywhere, what's up with that?
+    pub idle_timeout_minutes: u32,
 }
 
 #[allow(clippy::missing_errors_doc)]

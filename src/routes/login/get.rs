@@ -11,7 +11,7 @@ pub async fn check_auth(session: TypedSession) -> HttpResponse {
             // renew session on each check_auth to extend TTL
             session.renew();
             HttpResponse::Ok().finish()
-        },
+        }
         _ => HttpResponse::Unauthorized().finish(),
     }
 }

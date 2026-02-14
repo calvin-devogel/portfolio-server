@@ -7,7 +7,7 @@ pub enum AuthError {
     #[error("Invalid credentials")]
     InvalidCredentials(#[source] anyhow::Error),
     #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error)
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl ResponseError for AuthError {
@@ -19,4 +19,3 @@ impl ResponseError for AuthError {
         }
     }
 }
-

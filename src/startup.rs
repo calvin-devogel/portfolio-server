@@ -1,7 +1,17 @@
 use actix_cors::Cors;
-use actix_session::{SessionMiddleware, storage::RedisSessionStore, config::{PersistentSession, TtlExtensionPolicy}};
+use actix_session::{
+    SessionMiddleware,
+    config::{PersistentSession, TtlExtensionPolicy},
+    storage::RedisSessionStore,
+};
 use actix_web::{
-    App, HttpServer, cookie::{Key, SameSite}, dev::Server, http, middleware::from_fn, web, web::Data,
+    App, HttpServer,
+    cookie::{Key, SameSite},
+    dev::Server,
+    http,
+    middleware::from_fn,
+    web,
+    web::Data,
 };
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
@@ -10,9 +20,12 @@ use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 use crate::authentication::reject_anonymous_users;
-use crate::configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings};
+use crate::configuration::{
+    CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings,
+};
 use crate::routes::{
-    check_auth, get_messages, health_check, login, logout, post_message, test_reject, root, patch_message
+    check_auth, get_messages, health_check, login, logout, patch_message, post_message, root,
+    test_reject,
 };
 
 // wrapper type for SecretString
@@ -49,7 +62,7 @@ impl Application {
             configuration.redis_uri,
             configuration.rate_limit,
             configuration.cors,
-            configuration.ttl
+            configuration.ttl,
         )
         .await?;
 
@@ -77,8 +90,8 @@ async fn run(
     hmac_secret: SecretString,
     redis_uri: SecretString,
     rate_config: RateLimitSettings,
-    cors: CorsSettings,
-    ttl_config: TtlSettings
+    cors_config: CorsSettings,
+    ttl_config: TtlSettings,
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
@@ -92,28 +105,28 @@ async fn run(
         App::new()
             .wrap(message_framework.clone())
             .wrap(
-                SessionMiddleware::builder(redis_store.clone(),secret_key.clone())
-                .cookie_same_site(SameSite::Strict)
-                .cookie_http_only(true)
-                .cookie_secure(true)
-                .session_lifecycle(
-                    PersistentSession::default()
-                        .session_ttl(actix_web::cookie::time::Duration::hours(ttl_config.ttl_hours))
-                        .session_ttl_extension_policy(
-                            TtlExtensionPolicy::OnEveryRequest
-                        )
-                )
-                .build()
+                SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
+                    .cookie_same_site(SameSite::Strict)
+                    .cookie_http_only(true)
+                    .cookie_secure(true)
+                    .session_lifecycle(
+                        PersistentSession::default()
+                            .session_ttl(actix_web::cookie::time::Duration::hours(
+                                ttl_config.ttl_hours,
+                            ))
+                            .session_ttl_extension_policy(TtlExtensionPolicy::OnEveryRequest),
+                    )
+                    .build(),
             )
             .wrap(TracingLogger::default())
-            .wrap(
-                Cors::default()
-                    .allowed_origin(
-                        cors.allowed_origins
-                            .first()
-                            .expect("Failed to get allowed origin"),
-                    )
-                    .allowed_methods(vec!["GET", "POST", "PATCH"])
+            .wrap({
+                let mut cors = Cors::default();
+
+                for origin in &cors_config.allowed_origins {
+                    cors = cors.allowed_origin(origin);
+                }
+
+                cors.allowed_methods(vec!["GET", "POST", "PATCH"])
                     .allowed_headers(vec![
                         http::header::AUTHORIZATION,
                         http::header::ACCEPT,
@@ -121,8 +134,8 @@ async fn run(
                         http::header::HeaderName::from_static("idempotency-key"),
                     ])
                     .supports_credentials()
-                    .max_age(cors.max_age),
-            )
+                    .max_age(cors_config.max_age)
+            })
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
             .route("/api/login", web::post().to(login))
@@ -134,7 +147,7 @@ async fn run(
                     .wrap(from_fn(reject_anonymous_users))
                     .route("/test", web::get().to(test_reject))
                     .route("/messages", web::get().to(get_messages))
-                    .route("/messages", web::patch().to(patch_message))
+                    .route("/messages", web::patch().to(patch_message)),
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())

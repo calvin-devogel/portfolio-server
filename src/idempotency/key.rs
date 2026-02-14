@@ -4,6 +4,10 @@
 #[derive(Debug)]
 pub struct IdempotencyKey(String);
 
+impl IdempotencyKey {
+    const MAX_LENGTH: usize = 50;
+}
+
 // we need a TryFrom to ensure the key fits our criteria, specifically:
 // - the key must be non-empty
 // - the key must be no more than 50 characters in length
@@ -14,9 +18,11 @@ impl TryFrom<String> for IdempotencyKey {
         if s.is_empty() {
             anyhow::bail!("The idempotency key cannot be empty.")
         }
-        let max_length = 50;
-        if s.len() >= max_length {
-            anyhow::bail!("The idempotency key must be shorter than {max_length} characters");
+        if s.len() >= Self::MAX_LENGTH {
+            anyhow::bail!(format!(
+                "The idempotency key must be shorter than {} characters",
+                Self::MAX_LENGTH
+            ));
         }
         Ok(Self(s))
     }

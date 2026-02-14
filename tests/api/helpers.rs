@@ -152,7 +152,7 @@ impl TestApp {
 
     pub async fn patch_message<Body>(&self, body: &Body) -> reqwest::Response
     where
-        Body: serde::Serialize
+        Body: serde::Serialize,
     {
         self.api_client
             .patch(&format!("{}/api/admin/messages", &self.address))
@@ -161,7 +161,6 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to send message")
-           
     }
 }
 

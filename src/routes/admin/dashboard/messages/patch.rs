@@ -1,12 +1,11 @@
-use actix_web::{HttpResponse, HttpRequest, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
     authentication::UserId,
-    errors::MessagePatchError, 
-    idempotency::{
-        IdempotencyKey, NextAction, save_response, try_processing, get_idempotency_key}
+    errors::MessagePatchError,
+    idempotency::{IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing},
 };
 
 #[derive(serde::Deserialize)]
@@ -26,11 +25,10 @@ pub async fn patch_message(
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let idempotency_key: IdempotencyKey = get_idempotency_key(request)
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Failed to get idempotency key");
-            MessagePatchError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key"))
-        })?;
+    let idempotency_key: IdempotencyKey = get_idempotency_key(request).map_err(|e| {
+        tracing::warn!(error = ?e, "Failed to get idempotency key");
+        MessagePatchError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key"))
+    })?;
     let message_to_patch = message.0;
     let user_id = Some(**user_id);
 
@@ -53,7 +51,7 @@ pub async fn patch_message(
                 &pool,
                 &idempotency_key,
                 message_to_patch,
-                user_id
+                user_id,
             )
             .await
         }
@@ -66,7 +64,7 @@ async fn process_patch_message(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     message: MessagePatchRequest,
-    user_id: Option<Uuid>
+    user_id: Option<Uuid>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let message_id = message.message_id;
     let is_read = message.read;
@@ -103,10 +101,16 @@ async fn process_patch_message(
             Err(MessagePatchError::MessageNotFound.into())
         }
         rows => {
-            tracing::error!("Unexpected rows affected: {} for message_id: {}", rows, message_id);
-            Err(MessagePatchError::UnexpectedError(
-                anyhow::anyhow!("Unexpected rows affected: {}", rows)
-            ).into())
+            tracing::error!(
+                "Unexpected rows affected: {} for message_id: {}",
+                rows,
+                message_id
+            );
+            Err(MessagePatchError::UnexpectedError(anyhow::anyhow!(
+                "Unexpected rows affected: {}",
+                rows
+            ))
+            .into())
         }
     }
 }

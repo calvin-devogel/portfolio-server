@@ -46,7 +46,7 @@ async fn authorized_user_can_patch_messages() {
         message_id,
         read: true,
     };
-    
+
     // act 3: attempt to patch
     let response = app.patch_message(&patch_body).await;
     assert_eq!(response.status().as_u16(), 202);

@@ -1,12 +1,15 @@
 use actix_web::{HttpRequest, HttpResponse, web};
 use email_address::EmailAddress;
 use sqlx::{PgPool, Postgres, Transaction};
+use std::ops::Deref;
 use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::configuration::MessageRateLimitSettings;
 use crate::errors::ContactSubmissionError;
-use crate::idempotency::{IdempotencyKey, NextAction, save_response, try_processing, get_idempotency_key};
+use crate::idempotency::{
+    IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing,
+};
 
 #[derive(serde::Deserialize)]
 pub struct MessageForm {
@@ -15,14 +18,31 @@ pub struct MessageForm {
     message_text: String,
 }
 
+#[derive(Clone, Copy, Debug, serde::Serialize)]
+pub struct MessageId(Uuid);
+
+impl std::fmt::Display for MessageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl Deref for MessageId {
+    type Target = Uuid;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(serde::Serialize)]
 struct MessageResponse {
     message: &'static str,
-    message_id: Uuid,
+    message_id: MessageId,
 }
 
 impl MessageResponse {
-    pub const fn new(message: &'static str, message_id: Uuid) -> Self {
+    pub const fn new(message: &'static str, message_id: MessageId) -> Self {
         Self {
             message,
             message_id,
@@ -90,7 +110,10 @@ impl MessageForm {
 #[tracing::instrument(
     name = "Send message to contact table",
     skip(message, pool, request, message_config),
-    fields(email = %message.email)
+    fields(
+        email = %message.email,
+        message_id = tracing::field::Empty
+    )
 )]
 pub async fn post_message(
     message: web::Form<MessageForm>,
@@ -99,11 +122,10 @@ pub async fn post_message(
     message_config: web::Data<MessageRateLimitSettings>,
 ) -> Result<HttpResponse, actix_web::Error> {
     // get the idempotency key (generated client-side)
-    let idempotency_key: IdempotencyKey = get_idempotency_key(request)
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Failed to get idempotency key");
-            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key"))
-        })?;
+    let idempotency_key: IdempotencyKey = get_idempotency_key(request).map_err(|e| {
+        tracing::warn!(error = ?e, "Failed to get idempotency key");
+        ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key"))
+    })?;
 
     let validated_input = message.0.validate()?;
 
@@ -123,7 +145,6 @@ pub async fn post_message(
             let transaction = transaction.expect("Transaction must be present for StartProcessing");
             process_new_message(
                 transaction,
-                &pool,
                 &idempotency_key,
                 validated_input,
                 &message_config,
@@ -136,8 +157,7 @@ pub async fn post_message(
 #[allow(clippy::future_not_send)]
 // consume the transaction immediately for Send safety
 async fn process_new_message(
-    transaction: Transaction<'static, Postgres>,
-    pool: &PgPool,
+    mut transaction: Transaction<'static, Postgres>,
     idempotency_key: &IdempotencyKey,
     validated_input: ValidatedMessage,
     config: &MessageRateLimitSettings,
@@ -148,7 +168,7 @@ async fn process_new_message(
         i32::try_from(config.max_messages).expect("Failed to cast config.max_messages"),
         i32::try_from(config.window_minutes).expect("Failed to cast config.window_minutes")
     )
-    .fetch_one(pool)
+    .fetch_one(&mut *transaction)
     .await
     .map_err(|e| {
         ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}"))
@@ -159,18 +179,20 @@ async fn process_new_message(
         return Err(ContactSubmissionError::RateLimitExceeded.into());
     }
 
-    let message_id = Uuid::new_v4();
+    let message_id = MessageId(Uuid::new_v4());
+    tracing::Span::current().record("message_id", tracing::field::display(&message_id));
+
     let result = sqlx::query!(
         r#"
         INSERT INTO messages(message_id, email, sender_name, message_text, created_at, read_message)
         VALUES ($1, $2, $3, $4, NOW(), FALSE)
         "#,
-        message_id,
+        *message_id,
         validated_input.email,
         validated_input.sender_name,
         validated_input.message_text
     )
-    .execute(pool)
+    .execute(&mut *transaction)
     .await;
 
     match result {
