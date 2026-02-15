@@ -103,3 +103,50 @@ async fn unauthorized_users_cannot_patch_messages() {
 
 // test what happen when when the message is not found
 // and for idempotent tries re-using the same key
+#[tokio::test]
+async fn try_to_patch_non_existent_message() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    let fake_message = MessageToPatch {
+        message_id: Uuid::new_v4(),
+        read: true
+    };
+
+    let response = app.patch_message(&fake_message).await;
+    assert_eq!(response.status().as_u16(), 404);
+}
+
+#[tokio::test]
+async fn try_to_patch_with_reused_idempotency_key() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    let message = serde_json::json!({
+        "email": "fake@email.com",
+        "sender_name": "John Doe",
+        "message_text": "Message text."
+    });
+    app.post_message(&message).await;
+
+    let response_body = app.get_messages().await;
+
+    let messages_response: MessagesResponse = response_body
+        .json()
+        .await
+        .expect("Failed to parse messages response");
+
+    let message_id = messages_response.messages[0].message_id;
+
+    let patch_body = MessageToPatch {
+        message_id,
+        read: true,
+    };
+
+    let idempotency_key = Uuid::new_v4();
+
+    let first_response = app.patch_message_with_reused_key(&patch_body, &idempotency_key).await;
+    let second_response = app.patch_message_with_reused_key(&patch_body, &idempotency_key).await;
+
+    assert_eq!(first_response.status().as_u16(), second_response.status().as_u16());
+}
