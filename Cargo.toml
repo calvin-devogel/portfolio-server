@@ -39,6 +39,7 @@ secrecy = { version = "0.10.3", features = ["serde"] }
 serde = "1.0.228"
 serde-aux = "4.7.0"
 sqlx = { version = "0.8.6", default-features = false, features = [
+    "bigdecimal",
     "runtime-tokio-rustls",
     "macros",
     "postgres",
@@ -55,3 +56,6 @@ tracing-log = "0.2"
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"] }
 uuid = { version = "1.21.0", features = ["v4", "serde"] }
 email_address = "0.2.9"
+sha2 = "0.10.9"
+url = "2.5.8"
+bigdecimal = "0.4.10"
