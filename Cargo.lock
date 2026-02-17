@@ -2342,7 +2342,6 @@ dependencies = [
  "actix-web-flash-messages",
  "anyhow",
  "argon2",
- "bigdecimal",
  "chrono",
  "config",
  "console-subscriber",
@@ -2353,7 +2352,6 @@ dependencies = [
  "serde",
  "serde-aux",
  "serde_json",
- "sha2",
  "sqlx",
  "thiserror 2.0.18",
  "tokio",
@@ -2362,7 +2360,6 @@ dependencies = [
  "tracing-bunyan-formatter",
  "tracing-log 0.2.0",
  "tracing-subscriber",
- "url",
  "uuid",
 ]
 
