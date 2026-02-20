@@ -1,7 +1,9 @@
-use actix_web::{HttpResponse, http::StatusCode, web};
+use actix_web::{HttpResponse, web};
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use crate::errors::BlogError;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct BlogPostQuery {
@@ -13,22 +15,6 @@ pub struct BlogPostQuery {
 
 const fn default_page_size() -> i64 {
     5
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum BlogPostGetError {
-    #[error("Failed to get total count")]
-    TotalCount,
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error)
-}
-
-impl actix_web::ResponseError for BlogPostGetError {
-    fn status_code(&self) -> actix_web::http::StatusCode {
-        match self {
-            Self::TotalCount | Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR
-        }
-    }
 }
 
 #[derive(serde::Serialize)]
@@ -70,7 +56,7 @@ pub async fn get_blog_posts(
         .await
         .map_err(|e| {
             tracing::error!("Failed to get blog post count: {e:?}");
-            BlogPostGetError::TotalCount
+            BlogError::QueryFailed
         })?
         .unwrap_or(0);
 
@@ -88,7 +74,7 @@ pub async fn get_blog_posts(
     .await
     .map_err(|e| {
         tracing::error!("Failed to fetch blog posts: {e:?}");
-        BlogPostGetError::UnexpectedError(anyhow::anyhow!(e))
+        BlogError::UnexpectedError(anyhow::anyhow!(e))
     })?;
 
     tracing::info!(

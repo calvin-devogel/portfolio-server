@@ -1,30 +1,14 @@
-use actix_web::{HttpRequest, HttpResponse, ResponseError, http::StatusCode, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
     authentication::UserId,
+    errors::BlogError,
     idempotency::{
         IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing
     }
 };
-
-#[derive(thiserror::Error, Debug)]
-pub enum BlogDeleteError {
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
-    #[error("Post not found")]
-    PostNotFound,
-}
-
-impl ResponseError for BlogDeleteError {
-    fn status_code(&self) -> actix_web::http::StatusCode {
-        match self {
-            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PostNotFound => StatusCode::NOT_FOUND,
-        }
-    }
-}
 
 #[derive(serde::Deserialize)]
 pub struct BlogDeleteRequest {
@@ -45,7 +29,7 @@ pub async fn delete_blog_post(
     let idempotency_key: IdempotencyKey = get_idempotency_key(request)
         .map_err(|e| {
             tracing::warn!(error = ?e, "Failed to get idempotency key");
-            BlogDeleteError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key: {e:?}"))
+            BlogError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key: {e:?}"))
         })?;
 
     let post_to_delete = blog_delete.0;
@@ -56,7 +40,7 @@ pub async fn delete_blog_post(
     ).await
     .map_err(|e| {
         tracing::warn!(error = ?e, "Idempotent processing failed");
-        BlogDeleteError::UnexpectedError(e.into())
+        BlogError::UnexpectedError(e.into())
     })?;
 
     match next_action {
@@ -98,7 +82,7 @@ async fn process_delete_blog_post(
     .await
     .map_err(|e| {
         tracing::warn!("Blog post delete query failed");
-        BlogDeleteError::UnexpectedError(anyhow::anyhow!("{e:?}"))
+        BlogError::UnexpectedError(anyhow::anyhow!("{e:?}"))
     })?;
 
     match result.rows_affected() {
@@ -108,13 +92,13 @@ async fn process_delete_blog_post(
 
             let saved_response = save_response(transaction, idempotency_key, user_id, response)
                 .await
-                .map_err(BlogDeleteError::UnexpectedError)?;
+                .map_err(BlogError::UnexpectedError)?;
 
             Ok(saved_response)
         }
         0 => {
             tracing::warn!("Blog post not found: {}", post_id);
-            Err(BlogDeleteError::PostNotFound.into())
+            Err(BlogError::PostNotFound.into())
         }
         rows => {
             tracing::error!(
@@ -122,7 +106,7 @@ async fn process_delete_blog_post(
                 rows,
                 post_id
             );
-            Err(BlogDeleteError::UnexpectedError(anyhow::anyhow!(
+            Err(BlogError::UnexpectedError(anyhow::anyhow!(
                 "Unexpected rows affected: {}",
                 rows
             ))

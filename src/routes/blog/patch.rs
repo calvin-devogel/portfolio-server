@@ -1,28 +1,13 @@
 // start easy, just update published flag
-use actix_web::{HttpRequest, HttpResponse, ResponseError, http::StatusCode, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    authentication::UserId, idempotency::{IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing}
+    authentication::UserId,
+    errors::BlogError,
+    idempotency::{IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing}
 };
-
-#[derive(thiserror::Error, Debug)]
-pub enum BlogPatchError {
-    #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error),
-    #[error("Post not found")]
-    PostNotFound,
-}
-
-impl ResponseError for BlogPatchError {
-    fn status_code(&self) -> actix_web::http::StatusCode {
-        match self {
-            Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::PostNotFound => StatusCode::NOT_FOUND,
-        }
-    }
-}
 
 #[derive(serde::Deserialize)]
 pub struct BlogPatchRequest {
@@ -44,7 +29,7 @@ pub async fn publish_blog_post(
     let idempotency_key: IdempotencyKey = get_idempotency_key(request)
         .map_err(|e| {
             tracing::warn!(error = ?e, "Failed to get idempotency key");
-            BlogPatchError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key: {e:?}"))
+            BlogError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key: {e:?}"))
         })?;
 
     let post_to_publish = blog_patch.0;
@@ -55,7 +40,7 @@ pub async fn publish_blog_post(
     ).await
     .map_err(|e| {
         tracing::warn!(error = ?e, "Idempotent processing failed");
-        BlogPatchError::UnexpectedError(e.into())
+        BlogError::UnexpectedError(e.into())
     })?;
 
     match next_action {
@@ -100,7 +85,7 @@ async fn process_patch_blog_post(
     .await
     .map_err(|e| {
         tracing::warn!("Blog post query update failed");
-        BlogPatchError::UnexpectedError(anyhow::anyhow!("{e:?}"))
+        BlogError::UnexpectedError(anyhow::anyhow!("{e:?}"))
     })?;
 
     match result.rows_affected() {
@@ -110,13 +95,13 @@ async fn process_patch_blog_post(
 
             let saved_response = save_response(transaction, idempotency_key, user_id, response)
                 .await
-                .map_err(BlogPatchError::UnexpectedError)?;
+                .map_err(BlogError::UnexpectedError)?;
 
             Ok(saved_response)
         }
         0 => {
             tracing::warn!("Blog post not found: {}", post_id);
-            Err(BlogPatchError::PostNotFound.into())
+            Err(BlogError::PostNotFound.into())
         }
         rows => {
             tracing::error!(
@@ -124,8 +109,8 @@ async fn process_patch_blog_post(
                 rows,
                 post_id
             );
-            Err(BlogPatchError::UnexpectedError(anyhow::anyhow!(
-                "Unexpected rowas affected: {}",
+            Err(BlogError::UnexpectedError(anyhow::anyhow!(
+                "Unexpected rows affected: {}",
                 rows
             ))
             .into())
