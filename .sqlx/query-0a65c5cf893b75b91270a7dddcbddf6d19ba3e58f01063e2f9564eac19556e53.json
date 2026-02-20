@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO blog_posts(\n        post_id,\n        title,\n        slug,\n        content,\n        excerpt,\n        author,\n        published,\n        created_at,\n        updated_at)\n        VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW(), NOW())",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0a65c5cf893b75b91270a7dddcbddf6d19ba3e58f01063e2f9564eac19556e53"
+}
