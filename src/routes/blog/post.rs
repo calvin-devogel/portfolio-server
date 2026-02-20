@@ -130,8 +130,8 @@ async fn process_new_blog_post(
     }
 }
 
-fn get_blog_post_slug(title: &String) -> String {
-    str::replace(&title.clone(), " ", "-").to_ascii_lowercase()
+fn get_blog_post_slug(title: &str) -> String {
+    title.replace(" ", "-").to_ascii_lowercase()
 }
 
 #[cfg(test)]

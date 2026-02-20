@@ -168,6 +168,7 @@ async fn process_new_message(
         validated_input.sender_name,
         validated_input.message_text
     )
+    // this needs to be in a transaction (probably)
     .execute(pool)
     .await;
 

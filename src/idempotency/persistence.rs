@@ -195,6 +195,7 @@ where
         (NextAction::ReturnSavedResponse(saved_response), _) => Ok(saved_response),
 
         (NextAction::StartProcessing, Some(tx)) => {
+            // wrap all this in tx
             let response = operation().await?;
             let response = save_response(tx, &key, user_id, response)
                 .await
