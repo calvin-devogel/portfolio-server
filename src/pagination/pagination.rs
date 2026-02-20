@@ -46,7 +46,7 @@ impl PaginationMeta {
     pub fn from_total(total_items: i64, query: &PaginationQuery) -> Self {
         let page_size = query.page_size();
         let total_pages = if total_items == 0 {
-            0
+            1
         } else {
             (total_items + page_size - 1) / page_size
         };
