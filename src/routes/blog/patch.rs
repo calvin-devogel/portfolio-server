@@ -1,6 +1,6 @@
 // start easy, just update published flag
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::PgPool;
+use sqlx::{PgPool, Transaction, Postgres};
 use uuid::Uuid;
 
 use crate::{
@@ -27,18 +27,18 @@ pub async fn publish_blog_post(
 ) -> Result<HttpResponse, actix_web::Error> {
     let blog_to_publish = blog_patch.0;
     let user_id = Some(**user_id);
-    let pool_for_op = pool.clone();
 
-    execute_idempotent(&request, &pool, user_id, move || {
-        let pool_for_op = pool_for_op.clone();
-        async move { process_patch_blog_post(&pool_for_op, blog_to_publish).await }
+    execute_idempotent(&request, &pool, user_id, move |tx| {
+        Box::pin(async move {
+            process_patch_blog_post(tx, blog_to_publish).await
+        })
     })
     .await
 }
 
 #[allow(clippy::future_not_send)]
 async fn process_patch_blog_post(
-    pool: &PgPool,
+    transaction: &mut Transaction<'static, Postgres>,
     blog_post: BlogPatchRequest
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_id = blog_post.blog_post_id;
@@ -52,7 +52,7 @@ async fn process_patch_blog_post(
         blog_post.blog_post_id,
         is_published
     )
-    .execute(pool)
+    .execute(transaction.as_mut())
     .await
     .map_err(|e| {
         tracing::warn!("Blog post query update failed");

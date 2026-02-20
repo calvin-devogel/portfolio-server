@@ -1,5 +1,5 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool};
+use sqlx::{PgPool, Transaction, Postgres};
 use std::ops::Deref;
 use uuid::Uuid;
 
@@ -64,18 +64,18 @@ pub async fn insert_blog_post(
 ) -> Result<HttpResponse, actix_web::Error> {
     let blog_to_post = blog_post.0;
     let user_id = Some(**user_id);
-    let pool_for_op = pool.clone();
 
-    execute_idempotent(&request, &pool, user_id, move || {
-        let pool_for_op = pool_for_op.clone();
-        async move { process_new_blog_post(&pool_for_op, blog_to_post).await }
+    execute_idempotent(&request, &pool, user_id, move |tx| {
+        Box::pin(async move {
+            process_new_blog_post(tx, blog_to_post).await
+        })
     })
     .await
 }
 
 #[allow(clippy::future_not_send)]
 async fn process_new_blog_post(
-    pool: &PgPool,
+    transaction: &mut Transaction<'static, Postgres>,
     blog_post: BlogPostForm
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_id = BlogPostId(Uuid::new_v4());
@@ -102,7 +102,7 @@ async fn process_new_blog_post(
         blog_post.excerpt,
         blog_post.author
     )
-    .execute(pool)
+    .execute(transaction.as_mut())
     .await;
 
     match insert_result {

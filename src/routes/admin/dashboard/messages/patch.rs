@@ -1,5 +1,5 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool};
+use sqlx::{PgPool, Transaction, Postgres};
 use uuid::Uuid;
 
 use crate::{
@@ -27,18 +27,18 @@ pub async fn patch_message(
 ) -> Result<HttpResponse, actix_web::Error> {
     let message_to_patch = message.0;
     let user_id = Some(**user_id);
-    let pool_for_op = pool.clone();
 
-    execute_idempotent(&request, &pool, user_id, move || {
-        let pool_for_op = pool_for_op.clone();
-        async move { process_patch_message(&pool_for_op, message_to_patch).await }
+    execute_idempotent(&request, &pool, user_id, move |tx| {
+        Box::pin(async move {
+            process_patch_message(tx, message_to_patch).await
+        })
     })
     .await
 }
 
 #[allow(clippy::future_not_send)]
 async fn process_patch_message(
-    pool: &PgPool,
+    transaction: &mut Transaction<'static, Postgres>,
     message: MessagePatchRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
     let message_id = message.message_id;
@@ -53,7 +53,7 @@ async fn process_patch_message(
         message_id,
         is_read
     )
-    .execute(pool)
+    .execute(transaction.as_mut())
     .await
     .map_err(|e| {
         tracing::warn!("Message update query failed");

@@ -1,6 +1,6 @@
 use actix_web::{HttpRequest, HttpResponse, web};
 use email_address::EmailAddress;
-use sqlx::PgPool;
+use sqlx::{PgPool, Transaction, Postgres};
 use std::ops::Deref;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -120,13 +120,13 @@ pub async fn post_message(
     message_config: web::Data<MessageRateLimitSettings>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let message_to_post = message.0;
-    let pool_for_op = pool.clone();
     let config_for_op = message_config.clone();
 
-    execute_idempotent(&request, &pool, None, move || {
-        let pool_for_op = pool_for_op.clone();
+    execute_idempotent(&request, pool.get_ref(), None, move |tx| {
         let config_for_op = config_for_op.clone();
-        async move { process_new_message(&pool_for_op, config_for_op.get_ref(), message_to_post).await }
+        Box::pin(async move {
+            process_new_message(tx, &config_for_op.get_ref(), message_to_post).await
+        })
     })
     .await
 }
@@ -134,7 +134,7 @@ pub async fn post_message(
 #[allow(clippy::future_not_send)]
 // consume the transaction immediately for Send safety
 async fn process_new_message(
-    pool: &PgPool,
+    transaction: &mut Transaction<'static, Postgres>,
     config: &MessageRateLimitSettings,
     message: MessageForm
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -146,7 +146,7 @@ async fn process_new_message(
         i32::try_from(config.max_messages).expect("Failed to cast config.max_messages"),
         i32::try_from(config.window_minutes).expect("Failed to cast config.window_minutes")
     )
-    .fetch_one(pool)
+    .fetch_one(transaction.as_mut())
     .await
     .map_err(|e| ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}")))?
     .unwrap_or(false);
@@ -168,8 +168,7 @@ async fn process_new_message(
         validated_input.sender_name,
         validated_input.message_text
     )
-    // this needs to be in a transaction (probably)
-    .execute(pool)
+    .execute(transaction.as_mut())
     .await;
 
     match result {

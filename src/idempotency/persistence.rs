@@ -3,6 +3,7 @@ use crate::errors::IdempotencyError;
 use super::IdempotencyKey;
 use actix_web::{HttpResponse, HttpRequest, body::to_bytes, http::StatusCode};
 use std::future::Future;
+use std::pin::Pin;
 use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -177,15 +178,16 @@ pub fn get_idempotency_key(request: HttpRequest) -> Result<IdempotencyKey, Idemp
 }
 
 // reusable idempotency flow for all handlers that need it
-pub async fn execute_idempotent<F, Fut, E>(
+pub async fn execute_idempotent<F, E>(
     request: &HttpRequest,
     pool: &PgPool,
     user_id: Option<Uuid>,
     operation: F
 ) -> Result<HttpResponse, E>
 where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<HttpResponse, E>>,
+    F: for<'a> FnOnce(
+        &'a mut Transaction<'static, Postgres>,
+    ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
     E: From<IdempotencyError>,
 {
     let key = get_idempotency_key(request.clone()).map_err(E::from)?;
@@ -194,9 +196,9 @@ where
     match (action, tx_opt) {
         (NextAction::ReturnSavedResponse(saved_response), _) => Ok(saved_response),
 
-        (NextAction::StartProcessing, Some(tx)) => {
+        (NextAction::StartProcessing, Some(mut tx)) => {
             // wrap all this in tx
-            let response = operation().await?;
+            let response = operation(&mut tx).await?;
             let response = save_response(tx, &key, user_id, response)
                 .await
                 .map_err(E::from)?;
