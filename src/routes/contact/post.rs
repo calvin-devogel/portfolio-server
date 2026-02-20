@@ -1,15 +1,13 @@
 use actix_web::{HttpRequest, HttpResponse, web};
 use email_address::EmailAddress;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::PgPool;
 use std::ops::Deref;
 use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::configuration::MessageRateLimitSettings;
 use crate::errors::ContactSubmissionError;
-use crate::idempotency::{
-    IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing,
-};
+use crate::idempotency::execute_idempotent;
 
 #[derive(serde::Deserialize)]
 pub struct MessageForm {
@@ -121,58 +119,36 @@ pub async fn post_message(
     request: HttpRequest,
     message_config: web::Data<MessageRateLimitSettings>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    // get the idempotency key (generated client-side)
-    let idempotency_key: IdempotencyKey = get_idempotency_key(request).map_err(|e| {
-        tracing::warn!(error = ?e, "Failed to get idempotency key");
-        ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key"))
-    })?;
+    let message_to_post = message.0;
+    let pool_for_op = pool.clone();
+    let config_for_op = message_config.clone();
 
-    let validated_input = message.0.validate()?;
-
-    let (next_action, transaction) = try_processing(&pool, &idempotency_key, None)
-        .await
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Idempotent processing failed");
-            ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Idempotent processing failed"))
-        })?;
-
-    match next_action {
-        NextAction::ReturnSavedResponse(saved_response) => {
-            tracing::info!("Returning saved response for idempotent request");
-            Ok(saved_response)
-        }
-        NextAction::StartProcessing => {
-            let transaction = transaction.expect("Transaction must be present for StartProcessing");
-            process_new_message(
-                transaction,
-                &idempotency_key,
-                validated_input,
-                &message_config,
-            )
-            .await
-        }
-    }
+    execute_idempotent(&request, &pool, None, move || {
+        let pool_for_op = pool_for_op.clone();
+        let config_for_op = config_for_op.clone();
+        async move { process_new_message(&pool_for_op, config_for_op.get_ref(), message_to_post).await }
+    })
+    .await
 }
 
 #[allow(clippy::future_not_send)]
 // consume the transaction immediately for Send safety
 async fn process_new_message(
-    mut transaction: Transaction<'static, Postgres>,
-    idempotency_key: &IdempotencyKey,
-    validated_input: ValidatedMessage,
+    pool: &PgPool,
     config: &MessageRateLimitSettings,
+    message: MessageForm
 ) -> Result<HttpResponse, actix_web::Error> {
+    let validated_input = message.validate()?;
+
     let rate_ok = sqlx::query_scalar!(
         "SELECT check_email_rate_limit($1, $2, $3)",
-        validated_input.email,
+        &validated_input.email,
         i32::try_from(config.max_messages).expect("Failed to cast config.max_messages"),
         i32::try_from(config.window_minutes).expect("Failed to cast config.window_minutes")
     )
-    .fetch_one(&mut *transaction)
+    .fetch_one(pool)
     .await
-    .map_err(|e| {
-        ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}"))
-    })?
+    .map_err(|e| ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}")))?
     .unwrap_or(false);
 
     if !rate_ok {
@@ -192,22 +168,16 @@ async fn process_new_message(
         validated_input.sender_name,
         validated_input.message_text
     )
-    .execute(&mut *transaction)
+    .execute(pool)
     .await;
 
     match result {
         Ok(_) => {
             tracing::info!("Message saved successfully with: {}", message_id);
-            let response = HttpResponse::Accepted().json(MessageResponse::new(
+            Ok(HttpResponse::Accepted().json(MessageResponse::new(
                 "Message received successfully",
-                message_id,
-            ));
-
-            let saved_response = save_response(transaction, idempotency_key, None, response)
-                .await
-                .map_err(ContactSubmissionError::UnexpectedError)?;
-
-            Ok(saved_response)
+                message_id
+            )))
         }
         Err(e) => {
             if e.to_string().contains("Duplicate message detected") {

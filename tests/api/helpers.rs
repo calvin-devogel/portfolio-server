@@ -175,6 +175,27 @@ impl TestApp {
             .await
             .expect("Failed to send message")
     }
+
+    pub async fn _get_blog(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/api/blog", &self.address))
+            .send()
+            .await
+            .expect("Failed to get blog posts")
+    }
+
+    pub async fn _post_blog<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize
+    {
+        self.api_client
+            .post(format!("{}/api/admin/blog", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .form(&body)
+            .send()
+            .await
+            .expect("Failed to post blog entry")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {
