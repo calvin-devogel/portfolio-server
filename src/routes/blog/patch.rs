@@ -1,12 +1,12 @@
 // start easy, just update published flag
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
     authentication::UserId,
     errors::BlogError,
-    idempotency::{IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing}
+    idempotency::execute_idempotent,
 };
 
 #[derive(serde::Deserialize)]
@@ -18,7 +18,6 @@ pub struct BlogPatchRequest {
 #[tracing::instrument(
     name = "Publish blog post",
     skip_all,
-    fields(user_id = %*user_id, blog_post_id = %blog_patch.blog_post_id)
 )]
 pub async fn publish_blog_post(
     blog_patch: web::Json<BlogPatchRequest>,
@@ -26,49 +25,21 @@ pub async fn publish_blog_post(
     request: HttpRequest,
     pool: web::Data<PgPool>
 ) -> Result<HttpResponse, actix_web::Error> {
-    let idempotency_key: IdempotencyKey = get_idempotency_key(request)
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Failed to get idempotency key");
-            BlogError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key: {e:?}"))
-        })?;
-
-    let post_to_publish = blog_patch.0;
+    let blog_to_publish = blog_patch.0;
     let user_id = Some(**user_id);
+    let pool_for_op = pool.clone();
 
-    let (next_action, transaction) = try_processing(
-        &pool, &idempotency_key, user_id
-    ).await
-    .map_err(|e| {
-        tracing::warn!(error = ?e, "Idempotent processing failed");
-        BlogError::UnexpectedError(e.into())
-    })?;
-
-    match next_action {
-        NextAction::ReturnSavedResponse(saved_response) => {
-            tracing::info!("Returning saved response for idempotent request");
-            Ok(saved_response)
-        }
-        NextAction::StartProcessing => {
-            let transaction = transaction.expect("Transaction must be present for StartProcessing");
-            process_patch_blog_post(
-                transaction,
-                &pool,
-                &idempotency_key,
-                post_to_publish,
-                user_id
-            )
-            .await
-        }
-    }
+    execute_idempotent(&request, &pool, user_id, move || {
+        let pool_for_op = pool_for_op.clone();
+        async move { process_patch_blog_post(&pool_for_op, blog_to_publish).await }
+    })
+    .await
 }
 
 #[allow(clippy::future_not_send)]
 async fn process_patch_blog_post(
-    transaction: Transaction<'static, Postgres>,
     pool: &PgPool,
-    idempotency_key: &IdempotencyKey,
-    blog_post: BlogPatchRequest,
-    user_id: Option<Uuid>,
+    blog_post: BlogPatchRequest
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_id = blog_post.blog_post_id;
     let is_published = blog_post.published;
@@ -91,13 +62,7 @@ async fn process_patch_blog_post(
     match result.rows_affected() {
         1 => {
             tracing::info!("Post {} updated successfully", post_id);
-            let response = HttpResponse::Accepted().finish();
-
-            let saved_response = save_response(transaction, idempotency_key, user_id, response)
-                .await
-                .map_err(BlogError::UnexpectedError)?;
-
-            Ok(saved_response)
+            Ok(HttpResponse::Accepted().finish())
         }
         0 => {
             tracing::warn!("Blog post not found: {}", post_id);

@@ -3,26 +3,15 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::errors::MessageGetError;
+use crate::{
+    errors::MessageGetError,
+    pagination::{PaginationMeta, PaginationQuery}
+};
 
 // query messages in page form, minimum 0, maximum 20 per page
 // on read, should set the message_read column to TRUE
 // admin should be able to delete, highlight (star) messages
 // does this need any other functionality?
-
-// tragically, psql returns i64 for int sizes, can't shrink these until
-// after the query
-#[derive(serde::Deserialize, Debug)]
-pub struct MessageQuery {
-    #[serde(default)]
-    page: i64,
-    #[serde(default = "default_page_size")]
-    page_size: i64,
-}
-
-const fn default_page_size() -> i64 {
-    20
-}
 
 #[derive(serde::Serialize)]
 struct MessageRecord {
@@ -36,26 +25,27 @@ struct MessageRecord {
 
 #[derive(serde::Serialize)]
 struct MessagesResponse {
-    messages: Vec<MessageRecord>,
+    // Keep your old top-level list key:
+    messages: Vec<MessageRecord>, // <- use your existing message DTO type
+
+    // Keep old pagination keys:
     page: i64,
     page_size: i64,
-    total_count: i64,
+    total_items: i64,
+    total_pages: i64,
 }
 
 #[tracing::instrument(
     name = "Get messages with pagination",
     skip(pool),
-    fields(page = %query.page, page_size = %query.page_size)
 )]
 pub async fn get_messages(
-    query: web::Query<MessageQuery>,
+    query: web::Query<PaginationQuery>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    // validate pagination
-    let page = query.page.max(0);
-    let page_size = query.page_size.clamp(1, 20);
-    let offset = page * page_size;
-
+    let q = query.into_inner();
+    let page_size = q.page_size();
+    let offset = q.offset();
     // total count
     let total_count = sqlx::query_scalar!("SELECT COUNT(*) FROM messages")
         .fetch_one(pool.as_ref())
@@ -83,17 +73,15 @@ pub async fn get_messages(
         actix_web::error::ErrorInternalServerError("Failed to retrieve messages")
     })?;
 
-    tracing::info!(
-        "Retrieved {} messages for page {} (page_size: {})",
-        messages.len(),
-        page,
-        page_size
-    );
+    let meta = PaginationMeta::from_total(total_count, &q);
 
-    Ok(HttpResponse::Ok().json(MessagesResponse {
+    let response = MessagesResponse {
         messages,
-        page,
-        page_size,
-        total_count,
-    }))
+        page: meta.page,
+        page_size: meta.page_size,
+        total_items: meta.total_items,
+        total_pages: meta.total_pages
+    };
+
+    Ok(HttpResponse::Ok().json(response))
 }

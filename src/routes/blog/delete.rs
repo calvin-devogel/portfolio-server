@@ -1,13 +1,11 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgPool};
 use uuid::Uuid;
 
 use crate::{
     authentication::UserId,
     errors::BlogError,
-    idempotency::{
-        IdempotencyKey, NextAction, get_idempotency_key, save_response, try_processing
-    }
+    idempotency::{execute_idempotent}
 };
 
 #[derive(serde::Deserialize)]
@@ -26,56 +24,29 @@ pub async fn delete_blog_post(
     request: HttpRequest,
     pool: web::Data<PgPool>
 ) -> Result<HttpResponse, actix_web::Error> {
-    let idempotency_key: IdempotencyKey = get_idempotency_key(request)
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Failed to get idempotency key");
-            BlogError::UnexpectedError(anyhow::anyhow!("Failed to get idempotency key: {e:?}"))
-        })?;
-
     let post_to_delete = blog_delete.0;
     let user_id = Some(**user_id);
+    let pool_for_op = pool.clone();
 
-    let (next_action, transaction) = try_processing(
-        &pool, &idempotency_key, user_id
-    ).await
-    .map_err(|e| {
-        tracing::warn!(error = ?e, "Idempotent processing failed");
-        BlogError::UnexpectedError(e.into())
-    })?;
-
-    match next_action {
-        NextAction::ReturnSavedResponse(saved_response) => {
-            tracing::info!("Returning saved response for idempotent request");
-            Ok(saved_response)
-        }
-        NextAction::StartProcessing => {
-            let transaction = transaction.expect("Transaction must be present for StartProcessing");
-            process_delete_blog_post(
-                transaction,
-                &pool,
-                &idempotency_key,
-                post_to_delete,
-                user_id
-            )
-            .await
-        }
-    }
+    execute_idempotent(&request, &pool, user_id, move || {
+        let pool_for_op = pool_for_op.clone();
+        async move { process_delete_blog_post(&pool_for_op, post_to_delete).await }
+    })
+    .await
 }
 
 #[allow(clippy::future_not_send)]
 async fn process_delete_blog_post(
-    transaction: Transaction<'static, Postgres>,
     pool: &PgPool,
-    idempotency_key: &IdempotencyKey,
     blog_post: BlogDeleteRequest,
-    user_id: Option<Uuid>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_id = blog_post.blog_post_id;
 
     let result = sqlx::query!(
         r#"
         DELETE FROM blog_posts
-        WHERE post_id = $1"#,
+        WHERE post_id = $1
+        "#,
         post_id
     )
     .execute(pool)
@@ -88,13 +59,7 @@ async fn process_delete_blog_post(
     match result.rows_affected() {
         1 => {
             tracing::info!("Post {} deleted successfully", post_id);
-            let response = HttpResponse::Ok().finish();
-
-            let saved_response = save_response(transaction, idempotency_key, user_id, response)
-                .await
-                .map_err(BlogError::UnexpectedError)?;
-
-            Ok(saved_response)
+            Ok(HttpResponse::Ok().finish())
         }
         0 => {
             tracing::warn!("Blog post not found: {}", post_id);
@@ -102,7 +67,7 @@ async fn process_delete_blog_post(
         }
         rows => {
             tracing::error!(
-                "Unexpected rows affected: {} for blog_post_id: {}",
+                "Unexpected rows affected: {} for post id: {}",
                 rows,
                 post_id
             );

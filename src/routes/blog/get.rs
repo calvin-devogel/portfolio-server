@@ -3,19 +3,10 @@ use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::errors::BlogError;
-
-#[derive(serde::Deserialize, Debug)]
-pub struct BlogPostQuery {
-    #[serde(default)]
-    page: i64,
-    #[serde(default = "default_page_size")]
-    page_size: i64
-}
-
-const fn default_page_size() -> i64 {
-    5
-}
+use crate::{
+    errors::BlogError,
+    pagination::{PaginatedResponse, PaginationMeta, PaginationQuery}
+};
 
 #[derive(serde::Serialize)]
 struct BlogPostRecord {
@@ -30,26 +21,18 @@ struct BlogPostRecord {
     updated_at: DateTime<Utc>,
 }
 
-#[derive(serde::Serialize)]
-struct BlogPostsResponse {
-    blog_posts: Vec<BlogPostRecord>,
-    page: i64,
-    page_size: i64, 
-    total_count: i64,
-}
-
 #[tracing::instrument(
     name = "Get blog posts with pagination",
     skip(pool),
     fields(page = %query.page, page_size = %query.page_size)
 )]
 pub async fn get_blog_posts(
-    query: web::Query<BlogPostQuery>,
+    query: web::Query<PaginationQuery>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let page = query.page.max(0);
-    let page_size = query.page_size.clamp(1, 5);
-    let offset = page * page_size;
+    let q = query.into_inner();
+    let offset = q.offset();
+    let page_size = q.page_size();
 
     let total_count = sqlx::query_scalar!("SELECT COUNT(*) FROM blog_posts")
         .fetch_one(pool.as_ref())
@@ -77,17 +60,10 @@ pub async fn get_blog_posts(
         BlogError::UnexpectedError(anyhow::anyhow!(e))
     })?;
 
-    tracing::info!(
-        "Retrieved {} blog posts for page {} (page_size: {})",
-        blog_posts.len(),
-        page,
-        page_size
-    );
+    let response = PaginatedResponse {
+        data: blog_posts,
+        pagination: PaginationMeta::from_total(total_count, &q)
+    };
 
-    Ok(HttpResponse::Ok().json(BlogPostsResponse {
-        blog_posts,
-        page,
-        page_size,
-        total_count
-    }))
+    Ok(HttpResponse::Ok().json(response))
 }

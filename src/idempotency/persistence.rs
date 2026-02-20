@@ -1,9 +1,8 @@
-use actix_web::HttpRequest;
-
 use crate::errors::IdempotencyError;
 
 use super::IdempotencyKey;
-use actix_web::{HttpResponse, body::to_bytes, http::StatusCode};
+use actix_web::{HttpResponse, HttpRequest, body::to_bytes, http::StatusCode};
+use std::future::Future;
 use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
@@ -32,7 +31,7 @@ pub async fn try_processing(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
-) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), anyhow::Error> {
+) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), IdempotencyError> {
     let mut transaction = pool.begin().await?;
     let query = sqlx::query!(
         r#"
@@ -69,7 +68,7 @@ pub async fn save_response(
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
     http_response: HttpResponse,
-) -> Result<HttpResponse, anyhow::Error> {
+) -> Result<HttpResponse, IdempotencyError> {
     let (response_head, body) = http_response.into_parts();
     // MessageBody::Error is not `Send` + `Sync`
     // -> it does not play nicely with `anyhow`
@@ -158,7 +157,7 @@ pub async fn get_saved_response(
 // if duplicate -> `get_saved_response()` returns the cached result immediately
 
 // there are a few places where an idempotency key is required, use this wherever it is
-pub fn get_idempotency_key(request: HttpRequest) -> Result<IdempotencyKey, actix_web::Error> {
+pub fn get_idempotency_key(request: HttpRequest) -> Result<IdempotencyKey, IdempotencyError> {
     let idempotency_key: IdempotencyKey = request
         .headers()
         .get("Idempotency-Key")
@@ -175,4 +174,38 @@ pub fn get_idempotency_key(request: HttpRequest) -> Result<IdempotencyKey, actix
         })?;
 
     Ok(idempotency_key)
+}
+
+// reusable idempotency flow for all handlers that need it
+pub async fn execute_idempotent<F, Fut, E>(
+    request: &HttpRequest,
+    pool: &PgPool,
+    user_id: Option<Uuid>,
+    operation: F
+) -> Result<HttpResponse, E>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<HttpResponse, E>>,
+    E: From<IdempotencyError>,
+{
+    let key = get_idempotency_key(request.clone()).map_err(E::from)?;
+    let (action, tx_opt) = try_processing(pool, &key, user_id).await.map_err(E::from)?;
+
+    match (action, tx_opt) {
+        (NextAction::ReturnSavedResponse(saved_response), _) => Ok(saved_response),
+
+        (NextAction::StartProcessing, Some(tx)) => {
+            let response = operation().await?;
+            let response = save_response(tx, &key, user_id, response)
+                .await
+                .map_err(E::from)?;
+            Ok(response)
+        }
+
+        (NextAction::StartProcessing, None) => {
+            Err(E::from(IdempotencyError::UnexpectedError(anyhow::anyhow!(
+                "Missing transaction for StartProcessing"
+            ))))
+        }
+    }
 }
