@@ -105,7 +105,7 @@ pub async fn save_response(
         ))
         .await?;
     transaction.commit().await?;
-    // we need `.map_into_boxed_body` to go from `HttpResponse<Bytes>` to `HttpResponse<BoxBody`
+    // we need `.map_into_boxed_body` to go from `HttpResponse<Bytes>` to `HttpResponse<BoxBody>`
     // pulling a chunk of data from the payload stream requires a mutable reference to the stream itself
     // once the chunk has been read, there is no way to "replay" the stream and read it again
     // common pattern to work around this:
