@@ -34,7 +34,7 @@ async fn unauthorized_users_cannot_access_restricted_routes() {
     let app = spawn_app().await;
 
     // act
-    let response = app.test_reject().await;
+    let response = app.get_messages().await;
 
     // assert
     assert_eq!(response.status().as_u16(), 401);
@@ -47,7 +47,7 @@ async fn authorized_users_can_access_restricted_routes() {
     app.test_user.login(&app).await;
 
     // act
-    let response = app.test_reject().await;
+    let response = app.get_messages().await;
 
     // assert
     assert_eq!(response.status().as_u16(), 200);

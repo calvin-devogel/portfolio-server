@@ -19,13 +19,23 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
-use crate::authentication::reject_anonymous_users;
+use crate::{authentication::reject_anonymous_users};
 use crate::configuration::{
     CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings,
 };
 use crate::routes::{
-    check_auth, get_messages, health_check, login, logout, patch_message, post_message, root,
-    test_reject,
+    check_auth,
+    get_messages,
+    get_blog_posts,
+    insert_blog_post,
+    publish_blog_post,
+    delete_blog_post,
+    health_check,
+    login,
+    logout,
+    patch_message,
+    post_message,
+    root,
 };
 
 // wrapper type for SecretString
@@ -142,12 +152,15 @@ async fn run(
             .route("/api/logout", web::post().to(logout))
             .route("/api/check_auth", web::get().to(check_auth))
             .route("/api/contact", web::post().to(post_message))
+            .route("/api/blog", web::get().to(get_blog_posts))
             .service(
                 web::scope("/api/admin")
                     .wrap(from_fn(reject_anonymous_users))
-                    .route("/test", web::get().to(test_reject))
                     .route("/messages", web::get().to(get_messages))
-                    .route("/messages", web::patch().to(patch_message)),
+                    .route("/messages", web::patch().to(patch_message))
+                    .route("/blog", web::post().to(insert_blog_post))
+                    .route("/blog", web::patch().to(publish_blog_post))
+                    .route("/blog", web::delete().to(delete_blog_post))
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())

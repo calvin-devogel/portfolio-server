@@ -5,3 +5,4 @@ mod idempotency;
 mod login;
 mod logout;
 mod messages;
+mod blog;

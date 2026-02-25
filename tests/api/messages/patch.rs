@@ -10,7 +10,7 @@ struct MessageToPatch {
 
 #[derive(serde::Deserialize, Debug, Clone)]
 struct MessageRecord {
-    message_id: uuid::Uuid,
+    message_id: Uuid,
     read_message: Option<bool>,
 }
 

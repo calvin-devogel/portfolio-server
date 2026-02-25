@@ -113,14 +113,6 @@ impl TestApp {
             .expect("Failed to execute request")
     }
 
-    pub async fn test_reject(&self) -> reqwest::Response {
-        self.api_client
-            .get(&format!("{}/api/admin/test", &self.address))
-            .send()
-            .await
-            .expect("Failed to execute request.")
-    }
-
     pub async fn generic_request(&self) -> reqwest::Response {
         self.api_client
             .get(&format!("{}/health_check", &self.address))
@@ -176,7 +168,7 @@ impl TestApp {
             .expect("Failed to send message")
     }
 
-    pub async fn _get_blog(&self) -> reqwest::Response {
+    pub async fn get_blog(&self) -> reqwest::Response {
         self.api_client
             .get(&format!("{}/api/blog", &self.address))
             .send()
@@ -184,7 +176,7 @@ impl TestApp {
             .expect("Failed to get blog posts")
     }
 
-    pub async fn _post_blog<Body>(&self, body: &Body) -> reqwest::Response
+    pub async fn post_blog<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize
     {
@@ -195,6 +187,32 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to post blog entry")
+    }
+
+    pub async fn patch_blog<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize
+    {
+        self.api_client
+            .patch(format!("{}/api/admin/blog", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to patch blog entry")
+    }
+
+    pub async fn delete_blog<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize
+    {
+        self.api_client
+            .delete(format!("{}/api/admin/blog", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to delete blog")
     }
 }
 
