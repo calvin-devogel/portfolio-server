@@ -1,13 +1,9 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool, Transaction, Postgres};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::ops::Deref;
 use uuid::Uuid;
 
-use crate::{
-    authentication::UserId,
-    errors::{BlogError},
-    idempotency::execute_idempotent
-};
+use crate::{authentication::UserId, errors::BlogError, idempotency::execute_idempotent};
 
 #[derive(serde::Deserialize)]
 pub struct BlogPostForm {
@@ -42,10 +38,7 @@ struct BlogPostResponse {
 
 impl BlogPostResponse {
     pub const fn new(message: &'static str, post_id: BlogPostId) -> Self {
-        Self {
-            message,
-            post_id
-        }
+        Self { message, post_id }
     }
 }
 
@@ -66,9 +59,7 @@ pub async fn insert_blog_post(
     let user_id = Some(**user_id);
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move {
-            process_new_blog_post(tx, blog_to_post).await
-        })
+        Box::pin(async move { process_new_blog_post(tx, blog_to_post).await })
     })
     .await
 }
@@ -76,7 +67,7 @@ pub async fn insert_blog_post(
 #[allow(clippy::future_not_send)]
 async fn process_new_blog_post(
     transaction: &mut Transaction<'static, Postgres>,
-    blog_post: BlogPostForm
+    blog_post: BlogPostForm,
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_id = BlogPostId(Uuid::new_v4());
     let slug = get_blog_post_slug(&blog_post.title);
@@ -108,10 +99,8 @@ async fn process_new_blog_post(
     match insert_result {
         Ok(_) => {
             tracing::info!("Post saved successfully with: {}", post_id);
-            Ok(HttpResponse::Accepted().json(BlogPostResponse::new(
-                "Post received successfully",
-                post_id,
-            )))
+            Ok(HttpResponse::Accepted()
+                .json(BlogPostResponse::new("Post received successfully", post_id)))
         }
         Err(e) => {
             if let sqlx::Error::Database(db_err) = &e {
@@ -122,10 +111,7 @@ async fn process_new_blog_post(
             }
 
             tracing::error!("Failed to save post: {e:?}");
-            Err(BlogError::UnexpectedError(anyhow::anyhow!(
-                "Posting blog failed: {e:?}"
-            ))
-            .into())
+            Err(BlogError::UnexpectedError(anyhow::anyhow!("Posting blog failed: {e:?}")).into())
         }
     }
 }

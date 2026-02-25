@@ -1,10 +1,10 @@
 use crate::errors::IdempotencyError;
 
 use super::IdempotencyKey;
-use actix_web::{HttpResponse, HttpRequest, body::to_bytes, http::StatusCode};
+use actix_web::{HttpRequest, HttpResponse, body::to_bytes, http::StatusCode};
+use sqlx::{Executor, PgPool, Postgres, Transaction};
 use std::future::Future;
 use std::pin::Pin;
-use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 // header pair type for sqlx
@@ -182,7 +182,7 @@ pub async fn execute_idempotent<F, E>(
     request: &HttpRequest,
     pool: &PgPool,
     user_id: Option<Uuid>,
-    operation: F
+    operation: F,
 ) -> Result<HttpResponse, E>
 where
     F: for<'a> FnOnce(
@@ -205,10 +205,8 @@ where
             Ok(response)
         }
 
-        (NextAction::StartProcessing, None) => {
-            Err(E::from(IdempotencyError::UnexpectedError(anyhow::anyhow!(
-                "Missing transaction for StartProcessing"
-            ))))
-        }
+        (NextAction::StartProcessing, None) => Err(E::from(IdempotencyError::UnexpectedError(
+            anyhow::anyhow!("Missing transaction for StartProcessing"),
+        ))),
     }
 }

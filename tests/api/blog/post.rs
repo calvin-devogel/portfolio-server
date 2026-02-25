@@ -1,6 +1,5 @@
 use crate::helpers::spawn_app;
 
-
 #[tokio::test]
 async fn unauthorized_users_cannot_post_blogs() {
     let app = spawn_app().await;

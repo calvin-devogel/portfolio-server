@@ -15,7 +15,7 @@ pub enum BlogError {
     #[error("Slug conflict")]
     SlugConflict,
     #[error(transparent)]
-    UnexpectedError(#[from] anyhow::Error)
+    UnexpectedError(#[from] anyhow::Error),
 }
 
 impl ResponseError for BlogError {
@@ -24,7 +24,7 @@ impl ResponseError for BlogError {
             Self::InvalidContent(_) | Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::PostNotFound => StatusCode::NOT_FOUND,
             Self::DuplicatePost | Self::SlugConflict => StatusCode::CONFLICT,
-            Self::QueryFailed | Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR
+            Self::QueryFailed | Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

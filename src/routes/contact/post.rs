@@ -1,6 +1,6 @@
 use actix_web::{HttpRequest, HttpResponse, web};
 use email_address::EmailAddress;
-use sqlx::{PgPool, Transaction, Postgres};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::ops::Deref;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -124,9 +124,9 @@ pub async fn post_message(
 
     execute_idempotent(&request, pool.get_ref(), None, move |tx| {
         let config_for_op = config_for_op.clone();
-        Box::pin(async move {
-            process_new_message(tx, &config_for_op.get_ref(), message_to_post).await
-        })
+        Box::pin(
+            async move { process_new_message(tx, &config_for_op.get_ref(), message_to_post).await },
+        )
     })
     .await
 }
@@ -136,7 +136,7 @@ pub async fn post_message(
 async fn process_new_message(
     transaction: &mut Transaction<'static, Postgres>,
     config: &MessageRateLimitSettings,
-    message: MessageForm
+    message: MessageForm,
 ) -> Result<HttpResponse, actix_web::Error> {
     let validated_input = message.validate()?;
 
@@ -148,7 +148,9 @@ async fn process_new_message(
     )
     .fetch_one(transaction.as_mut())
     .await
-    .map_err(|e| ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}")))?
+    .map_err(|e| {
+        ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}"))
+    })?
     .unwrap_or(false);
 
     if !rate_ok {
@@ -176,7 +178,7 @@ async fn process_new_message(
             tracing::info!("Message saved successfully with: {}", message_id);
             Ok(HttpResponse::Accepted().json(MessageResponse::new(
                 "Message received successfully",
-                message_id
+                message_id,
             )))
         }
         Err(e) => {

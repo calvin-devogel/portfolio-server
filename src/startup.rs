@@ -19,23 +19,13 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
-use crate::{authentication::reject_anonymous_users};
+use crate::authentication::reject_anonymous_users;
 use crate::configuration::{
     CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings,
 };
 use crate::routes::{
-    check_auth,
-    get_messages,
-    get_blog_posts,
-    insert_blog_post,
-    publish_blog_post,
-    delete_blog_post,
-    health_check,
-    login,
-    logout,
-    patch_message,
-    post_message,
-    root,
+    check_auth, delete_blog_post, get_blog_posts, get_messages, health_check, insert_blog_post,
+    login, logout, patch_message, post_message, publish_blog_post, root,
 };
 
 // wrapper type for SecretString
@@ -129,38 +119,60 @@ async fn run(
                     .build(),
             )
             .wrap(TracingLogger::default())
-            .wrap({
-                let mut cors = Cors::default();
-
-                for origin in &cors_config.allowed_origins {
-                    cors = cors.allowed_origin(origin);
-                }
-
-                cors.allowed_methods(vec!["GET", "POST", "PATCH"])
-                    .allowed_headers(vec![
-                        http::header::AUTHORIZATION,
-                        http::header::ACCEPT,
-                        http::header::CONTENT_TYPE,
-                        http::header::HeaderName::from_static("idempotency-key"),
-                    ])
-                    .supports_credentials()
-                    .max_age(cors_config.max_age)
-            })
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
-            .route("/api/login", web::post().to(login))
-            .route("/api/logout", web::post().to(logout))
-            .route("/api/check_auth", web::get().to(check_auth))
-            .route("/api/contact", web::post().to(post_message))
-            .route("/api/blog", web::get().to(get_blog_posts))
             .service(
                 web::scope("/api/admin")
+                    .wrap({
+                        let mut cors = Cors::default();
+
+                        for origin in &cors_config.allowed_origins {
+                            cors = cors.allowed_origin(origin);
+                        }
+
+                        cors.allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
+                            .allowed_headers(vec![
+                                http::header::AUTHORIZATION,
+                                http::header::ACCEPT,
+                                http::header::CONTENT_TYPE,
+                                http::header::HeaderName::from_static("idempotency-key"),
+                                http::header::HeaderName::from_static("x-xsrf-token"),
+                            ])
+                            .supports_credentials()
+                            .max_age(cors_config.max_age)
+                    })
                     .wrap(from_fn(reject_anonymous_users))
                     .route("/messages", web::get().to(get_messages))
                     .route("/messages", web::patch().to(patch_message))
                     .route("/blog", web::post().to(insert_blog_post))
                     .route("/blog", web::patch().to(publish_blog_post))
-                    .route("/blog", web::delete().to(delete_blog_post))
+                    .route("/blog", web::delete().to(delete_blog_post)),
+            )
+            .service(
+                web::scope("/api")
+                    .wrap({
+                        let mut cors = Cors::default();
+
+                        for origin in &cors_config.allowed_origins {
+                            cors = cors.allowed_origin(origin);
+                        }
+
+                        cors.allowed_methods(vec!["GET", "POST"])
+                            .allowed_headers(vec![
+                                http::header::AUTHORIZATION,
+                                http::header::ACCEPT,
+                                http::header::CONTENT_TYPE,
+                                http::header::HeaderName::from_static("idempotency-key"),
+                                http::header::HeaderName::from_static("x-xsrf-token"),
+                            ])
+                            .supports_credentials()
+                            .max_age(cors_config.max_age)
+                    })
+                    .route("/login", web::post().to(login))
+                    .route("/logout", web::post().to(logout))
+                    .route("/check_auth", web::get().to(check_auth))
+                    .route("/contact", web::post().to(post_message))
+                    .route("/blog", web::get().to(get_blog_posts)),
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())

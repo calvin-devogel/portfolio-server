@@ -1,12 +1,8 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool, Transaction, Postgres};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{
-    authentication::UserId,
-    errors::BlogError,
-    idempotency::{execute_idempotent}
-};
+use crate::{authentication::UserId, errors::BlogError, idempotency::execute_idempotent};
 
 #[derive(serde::Deserialize)]
 pub struct BlogDeleteRequest {
@@ -22,15 +18,13 @@ pub async fn delete_blog_post(
     blog_delete: web::Json<BlogDeleteRequest>,
     user_id: web::ReqData<UserId>,
     request: HttpRequest,
-    pool: web::Data<PgPool>
+    pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_to_delete = blog_delete.0;
     let user_id = Some(**user_id);
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move {
-            process_delete_blog_post(tx, post_to_delete).await
-        })
+        Box::pin(async move { process_delete_blog_post(tx, post_to_delete).await })
     })
     .await
 }
@@ -71,11 +65,10 @@ async fn process_delete_blog_post(
                 rows,
                 post_id
             );
-            Err(BlogError::UnexpectedError(anyhow::anyhow!(
-                "Unexpected rows affected: {}",
-                rows
-            ))
-            .into())
+            Err(
+                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {}", rows))
+                    .into(),
+            )
         }
     }
 }

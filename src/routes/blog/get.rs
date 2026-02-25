@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::BlogError,
-    pagination::{PaginatedResponse, PaginationMeta, PaginationQuery}
+    pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
 };
 
 #[derive(serde::Serialize)]
@@ -62,7 +62,7 @@ pub async fn get_blog_posts(
 
     let response = PaginatedResponse {
         data: blog_posts,
-        pagination: PaginationMeta::from_total(total_count, &q)
+        pagination: PaginationMeta::from_total(total_count, &q),
     };
 
     Ok(HttpResponse::Ok().json(response))

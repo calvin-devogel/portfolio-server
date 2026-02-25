@@ -30,11 +30,8 @@ async fn authorized_user_can_delete_blogs() {
     let response = app.get_blog().await;
 
     assert_eq!(response.status().as_u16(), 200);
-    let blogs_response: BlogsResponse = response
-        .json()
-        .await
-        .expect("Failed to parse blogs");
-    
+    let blogs_response: BlogsResponse = response.json().await.expect("Failed to parse blogs");
+
     let blog_post_id = blogs_response.data[0].post_id;
 
     let blog_to_delete = serde_json::json!({
@@ -46,14 +43,11 @@ async fn authorized_user_can_delete_blogs() {
 
     // dbg!(response_body);
     // assert!(1 == 2);
-    
+
     assert_eq!(response.status().as_u16(), 200);
 
     let response = app.get_blog().await;
-    let blogs_response: BlogsResponse = response
-        .json()
-        .await
-        .expect("Failed to parse blogs");
+    let blogs_response: BlogsResponse = response.json().await.expect("Failed to parse blogs");
 
     assert!(blogs_response.data.len() == 0);
 }

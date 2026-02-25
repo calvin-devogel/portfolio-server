@@ -1,4 +1,3 @@
-
 use anyhow::Context;
 use argon2::{
     Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version,

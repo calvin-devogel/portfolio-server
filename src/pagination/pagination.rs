@@ -22,7 +22,7 @@ impl PaginationQuery {
     }
 
     pub fn page_size(&self) -> i64 {
-        self.page_size.clamp(1,20)
+        self.page_size.clamp(1, 20)
     }
 
     pub fn limit(&self) -> i64 {

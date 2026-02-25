@@ -155,9 +155,13 @@ impl TestApp {
             .expect("Failed to send message")
     }
 
-    pub async fn patch_message_with_reused_key<Body>(&self, body: &Body, idempotency_key: &Uuid) -> reqwest::Response
+    pub async fn patch_message_with_reused_key<Body>(
+        &self,
+        body: &Body,
+        idempotency_key: &Uuid,
+    ) -> reqwest::Response
     where
-        Body: serde::Serialize
+        Body: serde::Serialize,
     {
         self.api_client
             .patch(&format!("{}/api/admin/messages", &self.address))
@@ -178,7 +182,7 @@ impl TestApp {
 
     pub async fn post_blog<Body>(&self, body: &Body) -> reqwest::Response
     where
-        Body: serde::Serialize
+        Body: serde::Serialize,
     {
         self.api_client
             .post(format!("{}/api/admin/blog", &self.address))
@@ -191,7 +195,7 @@ impl TestApp {
 
     pub async fn patch_blog<Body>(&self, body: &Body) -> reqwest::Response
     where
-        Body: serde::Serialize
+        Body: serde::Serialize,
     {
         self.api_client
             .patch(format!("{}/api/admin/blog", &self.address))
@@ -204,7 +208,7 @@ impl TestApp {
 
     pub async fn delete_blog<Body>(&self, body: &Body) -> reqwest::Response
     where
-        Body: serde::Serialize
+        Body: serde::Serialize,
     {
         self.api_client
             .delete(format!("{}/api/admin/blog", &self.address))

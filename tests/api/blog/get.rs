@@ -7,7 +7,7 @@ use crate::helpers::spawn_app;
 #[tokio::test]
 async fn can_query_blog_posts() {
     let app = spawn_app().await;
-    
+
     let response = app.get_blog().await;
 
     assert_eq!(response.status().as_u16(), 200);

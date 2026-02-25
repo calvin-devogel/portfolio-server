@@ -41,16 +41,13 @@ async fn authorized_user_can_publish_blogs() {
     // let response_text =
 
     // dbg!(response_text);
-    let blogs_response: BlogsResponse = response
-        .json()
-        .await
-        .expect("Failed to parse blogs");
+    let blogs_response: BlogsResponse = response.json().await.expect("Failed to parse blogs");
 
     let blog_post_id = blogs_response.data[0].post_id;
 
     let patch_body = BlogToPatch {
         blog_post_id,
-        published: true
+        published: true,
     };
 
     let response = app.patch_blog(&patch_body).await;
@@ -59,10 +56,7 @@ async fn authorized_user_can_publish_blogs() {
 
     let response_body = app.get_blog().await;
 
-    let blogs_response: BlogsResponse = response_body
-        .json()
-        .await
-        .expect("Failed to parse blogs");
+    let blogs_response: BlogsResponse = response_body.json().await.expect("Failed to parse blogs");
 
     let blog_is_published = blogs_response.data[0].clone();
 
