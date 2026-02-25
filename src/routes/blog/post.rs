@@ -117,7 +117,7 @@ async fn process_new_blog_post(
 }
 
 fn get_blog_post_slug(title: &str) -> String {
-    title.replace(" ", "-").to_ascii_lowercase()
+    title.replace(' ', "-").to_ascii_lowercase()
 }
 
 #[cfg(test)]

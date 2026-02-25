@@ -66,7 +66,7 @@ async fn process_patch_blog_post(
                 post_id
             );
             Err(
-                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {}", rows))
+                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {rows}"))
                     .into(),
             )
         }

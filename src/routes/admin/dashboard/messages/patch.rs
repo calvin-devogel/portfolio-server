@@ -70,8 +70,7 @@ async fn process_patch_message(
                 message_id
             );
             Err(MessagePatchError::UnexpectedError(anyhow::anyhow!(
-                "Unexpected rows affected: {}",
-                rows
+                "Unexpected rows affected: {rows}"
             ))
             .into())
         }

@@ -158,7 +158,7 @@ pub async fn get_saved_response(
 // if duplicate -> `get_saved_response()` returns the cached result immediately
 
 // there are a few places where an idempotency key is required, use this wherever it is
-pub fn get_idempotency_key(request: HttpRequest) -> Result<IdempotencyKey, IdempotencyError> {
+pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, IdempotencyError> {
     let idempotency_key: IdempotencyKey = request
         .headers()
         .get("Idempotency-Key")
@@ -190,7 +190,7 @@ where
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
     E: From<IdempotencyError>,
 {
-    let key = get_idempotency_key(request.clone()).map_err(E::from)?;
+    let key = get_idempotency_key(&request.clone()).map_err(E::from)?;
     let (action, tx_opt) = try_processing(pool, &key, user_id).await.map_err(E::from)?;
 
     match (action, tx_opt) {

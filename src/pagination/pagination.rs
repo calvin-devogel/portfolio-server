@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-fn default_page() -> i64 {
+const fn default_page() -> i64 {
     1
 }
 
-fn default_page_size() -> i64 {
+const fn default_page_size() -> i64 {
     20
 }
 
