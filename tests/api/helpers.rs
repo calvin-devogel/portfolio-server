@@ -187,7 +187,7 @@ impl TestApp {
         self.api_client
             .post(format!("{}/api/admin/blog", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .form(&body)
+            .json(&body)
             .send()
             .await
             .expect("Failed to post blog entry")

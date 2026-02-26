@@ -50,12 +50,12 @@ impl BlogPostResponse {
     )
 )]
 pub async fn insert_blog_post(
-    blog_post: web::Form<BlogPostForm>,
+    blog_post: web::Json<BlogPostForm>,
     user_id: web::ReqData<UserId>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let blog_to_post = blog_post.0;
+    let blog_to_post = blog_post.into_inner();
     let user_id = Some(**user_id);
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
