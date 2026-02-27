@@ -32,7 +32,7 @@ pub struct BlogPostFilter {
     fields(page = %query.page, page_size = %query.page_size)
 )]
 pub async fn get_blog_posts(
-    filter: web::Json<BlogPostFilter>,
+    filter: web::Query<BlogPostFilter>,
     query: web::Query<PaginationQuery>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
