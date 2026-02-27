@@ -35,11 +35,7 @@ async fn authorized_user_can_publish_blogs() {
 
     assert_eq!(post_response.status().as_u16(), 202);
 
-    let on_published = serde_json::json!({
-        "on_published": false
-    });
-
-    let response = app.get_blog(&on_published).await;
+    let response = app.get_blog("false").await;
 
     dbg!(&response.status());
     // let response_text =
@@ -58,7 +54,7 @@ async fn authorized_user_can_publish_blogs() {
 
     assert_eq!(response.status().as_u16(), 202);
 
-    let response_body = app.get_blog(&on_published).await;
+    let response_body = app.get_blog("false").await;
 
     let blogs_response: BlogsResponse = response_body.json().await.expect("Failed to parse blogs");
 

@@ -172,13 +172,9 @@ impl TestApp {
             .expect("Failed to send message")
     }
 
-    pub async fn get_blog<Body>(&self, body: &Body) -> reqwest::Response
-    where
-        Body: serde::Serialize
-    {
+    pub async fn get_blog(&self, on_published: &str) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/api/blog", &self.address))
-            .json(&body)
+            .get(&format!("{}/api/blog?on_published={}", &self.address, on_published))
             .send()
             .await
             .expect("Failed to get blog posts")
