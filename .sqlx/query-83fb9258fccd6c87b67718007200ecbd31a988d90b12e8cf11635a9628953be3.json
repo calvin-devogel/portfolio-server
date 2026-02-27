@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT COUNT(*)\n        FROM blog_posts \n        WHERE \n            (NOT $1 OR published = true)\n            AND ($2::text IS NULL OR slug = $2)\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "83fb9258fccd6c87b67718007200ecbd31a988d90b12e8cf11635a9628953be3"
+}

@@ -13,6 +13,25 @@ pub struct BlogPostForm {
     author: String,
 }
 
+impl BlogPostForm {
+    fn validate(&self) -> Result<(), BlogError> {
+        let fields = [
+            ("title", &self.title),
+            ("content", &self.content),
+            ("excerpt", &self.excerpt),
+            ("author", &self.author),
+        ];
+
+        for (name, value) in fields {
+            if value.trim().is_empty() {
+                return Err(BlogError::ValidationError(format!("`{name}` must not be empty")));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct BlogPostId(Uuid);
 
@@ -57,6 +76,8 @@ pub async fn insert_blog_post(
 ) -> Result<HttpResponse, actix_web::Error> {
     let blog_to_post = blog_post.into_inner();
     let user_id = Some(**user_id);
+
+    blog_to_post.validate().map_err(actix_web::Error::from)?;
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
         Box::pin(async move { process_new_blog_post(tx, blog_to_post).await })

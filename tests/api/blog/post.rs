@@ -38,11 +38,21 @@ async fn blog_posts_with_bad_data_are_rejected() {
 
     let blog_body = serde_json::json!({
         "title": "Title",
-        "conent": "fake post content",
+        "content": "fake post content",
         "excerpt": "fake post...",
     });
 
     let response = app.post_blog(&blog_body).await;
     dbg!(&response.status().as_u16());
-    assert_eq!(response.status().as_u16(), 400)
+    assert_eq!(response.status().as_u16(), 400);
+
+    let blog_body = serde_json::json!({
+        "title": "Title",
+        "content": "",
+        "excerpt": "fake post...",
+        "author": "Andy Admin"
+    });
+
+    let response = app.post_blog(&blog_body).await;
+    assert_eq!(response.status().as_u16(), 400);
 }
