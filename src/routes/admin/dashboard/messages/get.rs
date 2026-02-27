@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::MessageGetError,
-    pagination::{PaginationMeta, PaginationQuery}
+    pagination::{PaginationMeta, PaginationQuery},
 };
 
 // query messages in page form, minimum 0, maximum 20 per page
@@ -35,10 +35,7 @@ struct MessagesResponse {
     total_pages: i64,
 }
 
-#[tracing::instrument(
-    name = "Get messages with pagination",
-    skip(pool),
-)]
+#[tracing::instrument(name = "Get messages with pagination", skip(pool))]
 pub async fn get_messages(
     query: web::Query<PaginationQuery>,
     pool: web::Data<PgPool>,
@@ -80,7 +77,7 @@ pub async fn get_messages(
         page: meta.page,
         page_size: meta.page_size,
         total_items: meta.total_items,
-        total_pages: meta.total_pages
+        total_pages: meta.total_pages,
     };
 
     Ok(HttpResponse::Ok().json(response))

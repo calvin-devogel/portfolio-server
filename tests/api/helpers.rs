@@ -2,6 +2,8 @@ use argon2::{
     Algorithm, Argon2, Params, PasswordHasher, Version,
     password_hash::{SaltString, rand_core::OsRng},
 };
+use chrono::{DateTime, Utc};
+use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
@@ -26,6 +28,39 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
         init_subscriber(subscriber);
     }
 });
+
+#[derive(serde::Serialize)]
+pub struct PublishRequest {
+    pub post_id: Uuid,
+    pub published: bool,
+}
+
+#[derive(serde::Serialize)]
+pub struct EditRequest {
+    pub post_id: Uuid,
+    pub title: Option<String>,
+    pub content: Option<String>,
+    pub excerpt: Option<String>,
+    pub author: Option<String>,
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct GetResponse {
+    pub data: Vec<BlogPostRecord>,
+}
+
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct BlogPostRecord {
+    pub post_id: Uuid,
+    pub title: String,
+    pub slug: String,
+    pub content: String,
+    pub excerpt: String,
+    pub author: String,
+    pub published: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 
 #[derive(Debug, serde::Serialize)]
 pub struct TestUser {
@@ -113,14 +148,6 @@ impl TestApp {
             .expect("Failed to execute request")
     }
 
-    pub async fn test_reject(&self) -> reqwest::Response {
-        self.api_client
-            .get(&format!("{}/api/admin/test", &self.address))
-            .send()
-            .await
-            .expect("Failed to execute request.")
-    }
-
     pub async fn generic_request(&self) -> reqwest::Response {
         self.api_client
             .get(&format!("{}/health_check", &self.address))
@@ -163,9 +190,13 @@ impl TestApp {
             .expect("Failed to send message")
     }
 
-    pub async fn patch_message_with_reused_key<Body>(&self, body: &Body, idempotency_key: &Uuid) -> reqwest::Response
+    pub async fn patch_message_with_reused_key<Body>(
+        &self,
+        body: &Body,
+        idempotency_key: &Uuid,
+    ) -> reqwest::Response
     where
-        Body: serde::Serialize
+        Body: serde::Serialize,
     {
         self.api_client
             .patch(&format!("{}/api/admin/messages", &self.address))
@@ -176,25 +207,71 @@ impl TestApp {
             .expect("Failed to send message")
     }
 
-    pub async fn _get_blog(&self) -> reqwest::Response {
+    pub async fn get_blog(&self, on_published: &str, slug: Option<String>) -> reqwest::Response {
+        let mut header_map = HeaderMap::new();
+        // horrible, just horrible
+        header_map.insert("BlogPost-Page", "1".parse().unwrap());
+        header_map.insert("BlogPost-Page-Size", "20".parse().unwrap());
+        header_map.insert("BlogPost-On-Published", on_published.parse().unwrap_or("false".parse().unwrap()));
+        if slug.is_some() { header_map.insert("BlogPost-Slug", slug.unwrap().parse().unwrap()); }
         self.api_client
             .get(&format!("{}/api/blog", &self.address))
+            .headers(header_map)
             .send()
             .await
             .expect("Failed to get blog posts")
     }
 
-    pub async fn _post_blog<Body>(&self, body: &Body) -> reqwest::Response
+    pub async fn post_blog<Body>(&self, body: &Body) -> reqwest::Response
     where
-        Body: serde::Serialize
+        Body: serde::Serialize,
     {
         self.api_client
-            .post(format!("{}/api/admin/blog", &self.address))
+            .post(format!("{}/api/admin/blog/post", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .form(&body)
+            .json(&body)
             .send()
             .await
             .expect("Failed to post blog entry")
+    }
+
+    pub async fn publish_blog<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .patch(format!("{}/api/admin/blog/publish", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to publish blog entry")
+    }
+
+    pub async fn edit_blog<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .patch(format!("{}/api/admin/blog/edit", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to edit blog post")
+    }
+
+    pub async fn delete_blog<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .delete(format!("{}/api/admin/blog/delete", &self.address))
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to delete blog")
     }
 }
 

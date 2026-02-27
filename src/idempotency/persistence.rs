@@ -1,10 +1,10 @@
 use crate::errors::IdempotencyError;
 
 use super::IdempotencyKey;
-use actix_web::{HttpResponse, HttpRequest, body::to_bytes, http::StatusCode};
+use actix_web::{HttpRequest, HttpResponse, body::to_bytes, http::StatusCode};
+use sqlx::{Executor, PgPool, Postgres, Transaction};
 use std::future::Future;
 use std::pin::Pin;
-use sqlx::{Executor, PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 // header pair type for sqlx
@@ -158,7 +158,7 @@ pub async fn get_saved_response(
 // if duplicate -> `get_saved_response()` returns the cached result immediately
 
 // there are a few places where an idempotency key is required, use this wherever it is
-pub fn get_idempotency_key(request: HttpRequest) -> Result<IdempotencyKey, IdempotencyError> {
+pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, IdempotencyError> {
     let idempotency_key: IdempotencyKey = request
         .headers()
         .get("Idempotency-Key")
@@ -182,7 +182,7 @@ pub async fn execute_idempotent<F, E>(
     request: &HttpRequest,
     pool: &PgPool,
     user_id: Option<Uuid>,
-    operation: F
+    operation: F,
 ) -> Result<HttpResponse, E>
 where
     F: for<'a> FnOnce(
@@ -190,7 +190,7 @@ where
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
     E: From<IdempotencyError>,
 {
-    let key = get_idempotency_key(request.clone()).map_err(E::from)?;
+    let key = get_idempotency_key(&request.clone()).map_err(E::from)?;
     let (action, tx_opt) = try_processing(pool, &key, user_id).await.map_err(E::from)?;
 
     match (action, tx_opt) {
@@ -205,10 +205,8 @@ where
             Ok(response)
         }
 
-        (NextAction::StartProcessing, None) => {
-            Err(E::from(IdempotencyError::UnexpectedError(anyhow::anyhow!(
-                "Missing transaction for StartProcessing"
-            ))))
-        }
+        (NextAction::StartProcessing, None) => Err(E::from(IdempotencyError::UnexpectedError(
+            anyhow::anyhow!("Missing transaction for StartProcessing"),
+        ))),
     }
 }

@@ -19,14 +19,32 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
-use crate::authentication::reject_anonymous_users;
-use crate::configuration::{
-    CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings,
+use crate::{
+    authentication::reject_anonymous_users,
+    configuration::{ CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
+    routes::{
+        check_auth,
+        delete_blog_post,
+        get_blog_posts,
+        edit_blog_post,
+        publish_blog_post,
+        get_messages,
+        health_check,
+        insert_blog_post,
+        login,
+        logout,
+        patch_message,
+        post_message,
+        root,
+    }
 };
-use crate::routes::{
-    check_auth, get_messages, health_check, login, logout, patch_message, post_message, root,
-    test_reject,
-};
+
+#[derive(serde::Deserialize, Clone)]
+struct UtilConfig {
+    rate: RateLimitSettings,
+    cors: CorsSettings,
+    ttl: TtlSettings,
+}
 
 // wrapper type for SecretString
 #[derive(Clone)]
@@ -52,6 +70,13 @@ impl Application {
             configuration.application.host, configuration.application.port,
         );
 
+        // reduce run's argument count!
+        let util_config = UtilConfig {
+            rate: configuration.rate_limit,
+            cors: configuration.cors,
+            ttl: configuration.ttl,
+        };
+
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
         let server = run(
@@ -60,9 +85,7 @@ impl Application {
             configuration.application.base_url,
             configuration.application.hmac_secret,
             configuration.redis_uri,
-            configuration.rate_limit,
-            configuration.cors,
-            configuration.ttl,
+            util_config
         )
         .await?;
 
@@ -81,6 +104,7 @@ impl Application {
     }
 }
 
+
 // run the actual server
 #[allow(clippy::missing_errors_doc)]
 async fn run(
@@ -89,9 +113,7 @@ async fn run(
     base_url: String,
     hmac_secret: SecretString,
     redis_uri: SecretString,
-    rate_config: RateLimitSettings,
-    cors_config: CorsSettings,
-    ttl_config: TtlSettings,
+    util_config: UtilConfig,
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
@@ -112,47 +134,73 @@ async fn run(
                     .session_lifecycle(
                         PersistentSession::default()
                             .session_ttl(actix_web::cookie::time::Duration::hours(
-                                ttl_config.ttl_hours,
+                                util_config.ttl.ttl_hours,
                             ))
                             .session_ttl_extension_policy(TtlExtensionPolicy::OnEveryRequest),
                     )
                     .build(),
             )
             .wrap(TracingLogger::default())
-            .wrap({
-                let mut cors = Cors::default();
-
-                for origin in &cors_config.allowed_origins {
-                    cors = cors.allowed_origin(origin);
-                }
-
-                cors.allowed_methods(vec!["GET", "POST", "PATCH"])
-                    .allowed_headers(vec![
-                        http::header::AUTHORIZATION,
-                        http::header::ACCEPT,
-                        http::header::CONTENT_TYPE,
-                        http::header::HeaderName::from_static("idempotency-key"),
-                    ])
-                    .supports_credentials()
-                    .max_age(cors_config.max_age)
-            })
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
-            .route("/api/login", web::post().to(login))
-            .route("/api/logout", web::post().to(logout))
-            .route("/api/check_auth", web::get().to(check_auth))
-            .route("/api/contact", web::post().to(post_message))
             .service(
-                web::scope("/api/admin")
-                    .wrap(from_fn(reject_anonymous_users))
-                    .route("/test", web::get().to(test_reject))
-                    .route("/messages", web::get().to(get_messages))
-                    .route("/messages", web::patch().to(patch_message)),
+                web::scope("/api")
+                    .wrap({
+                        let mut cors = Cors::default();
+
+                        for origin in &util_config.cors.allowed_origins {
+                            cors = cors.allowed_origin(origin);
+                        }
+
+                        cors.allowed_methods(vec!["GET", "POST"])
+                            .allowed_headers(vec![
+                                http::header::AUTHORIZATION,
+                                http::header::ACCEPT,
+                                http::header::CONTENT_TYPE,
+                                http::header::HeaderName::from_static("idempotency-key"),
+                                http::header::HeaderName::from_static("x-xsrf-token"),
+                            ])
+                            .supports_credentials()
+                            .max_age(util_config.cors.max_age)
+                    })
+                    .route("/login", web::post().to(login))
+                    .route("/logout", web::post().to(logout))
+                    .route("/check_auth", web::get().to(check_auth))
+                    .route("/contact", web::post().to(post_message))
+                    .route("/blog", web::get().to(get_blog_posts))
+                    .service(
+                        web::scope("/admin")
+                            .wrap({
+                                let mut cors = Cors::default();
+
+                                for origin in &util_config.cors.allowed_origins {
+                                    cors = cors.allowed_origin(origin);
+                                }
+
+                                cors.allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
+                                    .allowed_headers(vec![
+                                        http::header::AUTHORIZATION,
+                                        http::header::ACCEPT,
+                                        http::header::CONTENT_TYPE,
+                                        http::header::HeaderName::from_static("idempotency-key"),
+                                        http::header::HeaderName::from_static("x-xsrf-token"),
+                                    ])
+                                    .supports_credentials()
+                                    .max_age(util_config.cors.max_age)
+                            })
+                            .wrap(from_fn(reject_anonymous_users))
+                            .route("/messages", web::get().to(get_messages))
+                            .route("/messages", web::patch().to(patch_message))
+                            .route("/blog/post", web::post().to(insert_blog_post))
+                            .route("/blog/publish", web::patch().to(publish_blog_post))
+                            .route("/blog/delete", web::delete().to(delete_blog_post))
+                            .route("/blog/edit", web::patch().to(edit_blog_post))
+                    ),
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
-            .app_data(Data::new(rate_config.message.clone()))
+            .app_data(Data::new(util_config.rate.message.clone()))
     })
     .listen(listener)?
     .run();

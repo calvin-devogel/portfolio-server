@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-fn default_page() -> i64 {
+const fn default_page() -> i64 {
     1
 }
 
-fn default_page_size() -> i64 {
+const fn default_page_size() -> i64 {
     20
 }
 
@@ -22,7 +22,7 @@ impl PaginationQuery {
     }
 
     pub fn page_size(&self) -> i64 {
-        self.page_size.clamp(1,20)
+        self.page_size.clamp(1, 20)
     }
 
     pub fn limit(&self) -> i64 {

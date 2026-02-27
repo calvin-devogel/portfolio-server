@@ -1,12 +1,8 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool, Transaction, Postgres};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{
-    authentication::UserId,
-    errors::MessagePatchError,
-    idempotency::{execute_idempotent},
-};
+use crate::{authentication::UserId, errors::MessagePatchError, idempotency::execute_idempotent};
 
 #[derive(serde::Deserialize)]
 pub struct MessagePatchRequest {
@@ -29,9 +25,7 @@ pub async fn patch_message(
     let user_id = Some(**user_id);
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move {
-            process_patch_message(tx, message_to_patch).await
-        })
+        Box::pin(async move { process_patch_message(tx, message_to_patch).await })
     })
     .await
 }
@@ -76,8 +70,7 @@ async fn process_patch_message(
                 message_id
             );
             Err(MessagePatchError::UnexpectedError(anyhow::anyhow!(
-                "Unexpected rows affected: {}",
-                rows
+                "Unexpected rows affected: {rows}"
             ))
             .into())
         }

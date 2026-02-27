@@ -1,13 +1,9 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool, Transaction, Postgres};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::ops::Deref;
 use uuid::Uuid;
 
-use crate::{
-    authentication::UserId,
-    errors::{BlogError},
-    idempotency::execute_idempotent
-};
+use crate::{authentication::UserId, errors::BlogError, idempotency::execute_idempotent};
 
 #[derive(serde::Deserialize)]
 pub struct BlogPostForm {
@@ -15,6 +11,25 @@ pub struct BlogPostForm {
     content: String,
     excerpt: String,
     author: String,
+}
+
+impl BlogPostForm {
+    fn validate(&self) -> Result<(), BlogError> {
+        let fields = [
+            ("title", &self.title),
+            ("content", &self.content),
+            ("excerpt", &self.excerpt),
+            ("author", &self.author),
+        ];
+
+        for (name, value) in fields {
+            if value.trim().is_empty() {
+                return Err(BlogError::ValidationError(format!("`{name}` must not be empty")));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, serde::Serialize)]
@@ -42,10 +57,7 @@ struct BlogPostResponse {
 
 impl BlogPostResponse {
     pub const fn new(message: &'static str, post_id: BlogPostId) -> Self {
-        Self {
-            message,
-            post_id
-        }
+        Self { message, post_id }
     }
 }
 
@@ -57,18 +69,18 @@ impl BlogPostResponse {
     )
 )]
 pub async fn insert_blog_post(
-    blog_post: web::Form<BlogPostForm>,
+    blog_post: web::Json<BlogPostForm>,
     user_id: web::ReqData<UserId>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let blog_to_post = blog_post.0;
+    let blog_to_post = blog_post.into_inner();
     let user_id = Some(**user_id);
 
+    blog_to_post.validate().map_err(actix_web::Error::from)?;
+
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move {
-            process_new_blog_post(tx, blog_to_post).await
-        })
+        Box::pin(async move { process_new_blog_post(tx, blog_to_post).await })
     })
     .await
 }
@@ -76,7 +88,7 @@ pub async fn insert_blog_post(
 #[allow(clippy::future_not_send)]
 async fn process_new_blog_post(
     transaction: &mut Transaction<'static, Postgres>,
-    blog_post: BlogPostForm
+    blog_post: BlogPostForm,
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_id = BlogPostId(Uuid::new_v4());
     let slug = get_blog_post_slug(&blog_post.title);
@@ -108,10 +120,8 @@ async fn process_new_blog_post(
     match insert_result {
         Ok(_) => {
             tracing::info!("Post saved successfully with: {}", post_id);
-            Ok(HttpResponse::Accepted().json(BlogPostResponse::new(
-                "Post received successfully",
-                post_id,
-            )))
+            Ok(HttpResponse::Accepted()
+                .json(BlogPostResponse::new("Post received successfully", post_id)))
         }
         Err(e) => {
             if let sqlx::Error::Database(db_err) = &e {
@@ -122,16 +132,13 @@ async fn process_new_blog_post(
             }
 
             tracing::error!("Failed to save post: {e:?}");
-            Err(BlogError::UnexpectedError(anyhow::anyhow!(
-                "Posting blog failed: {e:?}"
-            ))
-            .into())
+            Err(BlogError::UnexpectedError(anyhow::anyhow!("Posting blog failed: {e:?}")).into())
         }
     }
 }
 
 fn get_blog_post_slug(title: &str) -> String {
-    title.replace(" ", "-").to_ascii_lowercase()
+    title.replace(' ', "-").to_ascii_lowercase()
 }
 
 #[cfg(test)]

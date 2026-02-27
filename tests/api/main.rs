@@ -1,3 +1,4 @@
+mod blog;
 mod check_auth;
 mod health_check;
 mod helpers;

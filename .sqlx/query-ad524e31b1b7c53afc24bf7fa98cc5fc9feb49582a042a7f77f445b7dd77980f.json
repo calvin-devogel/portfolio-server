@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT post_id, title, slug, content, excerpt, author, published, created_at, updated_at\n        FROM blog_posts\n        ORDER BY created_at DESC\n        LIMIT $1 OFFSET $2",
+  "query": "\n        SELECT\n            post_id,\n            title,\n            slug,\n            content,\n            excerpt,\n            author,\n            published,\n            created_at,\n            updated_at\n        FROM blog_posts\n        WHERE\n            (NOT $1 OR published = true)\n            AND ($2::text IS NULL OR slug = $2)\n        ORDER BY created_at DESC\n        LIMIT $3 OFFSET $4",
   "describe": {
     "columns": [
       {
@@ -51,6 +51,8 @@
     ],
     "parameters": {
       "Left": [
+        "Bool",
+        "Text",
         "Int8",
         "Int8"
       ]
@@ -67,5 +69,5 @@
       false
     ]
   },
-  "hash": "782332a32f2c932b32c1d70a3609f11709728b06cbea7266bc3ec344d5e1512c"
+  "hash": "ad524e31b1b7c53afc24bf7fa98cc5fc9feb49582a042a7f77f445b7dd77980f"
 }

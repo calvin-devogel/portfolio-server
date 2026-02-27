@@ -10,7 +10,7 @@ struct MessageToPatch {
 
 #[derive(serde::Deserialize, Debug, Clone)]
 struct MessageRecord {
-    message_id: uuid::Uuid,
+    message_id: Uuid,
     read_message: Option<bool>,
 }
 
@@ -110,7 +110,7 @@ async fn try_to_patch_non_existent_message() {
 
     let fake_message = MessageToPatch {
         message_id: Uuid::new_v4(),
-        read: true
+        read: true,
     };
 
     let response = app.patch_message(&fake_message).await;
@@ -145,8 +145,15 @@ async fn try_to_patch_with_reused_idempotency_key() {
 
     let idempotency_key = Uuid::new_v4();
 
-    let first_response = app.patch_message_with_reused_key(&patch_body, &idempotency_key).await;
-    let second_response = app.patch_message_with_reused_key(&patch_body, &idempotency_key).await;
+    let first_response = app
+        .patch_message_with_reused_key(&patch_body, &idempotency_key)
+        .await;
+    let second_response = app
+        .patch_message_with_reused_key(&patch_body, &idempotency_key)
+        .await;
 
-    assert_eq!(first_response.status().as_u16(), second_response.status().as_u16());
+    assert_eq!(
+        first_response.status().as_u16(),
+        second_response.status().as_u16()
+    );
 }
