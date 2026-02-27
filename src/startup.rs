@@ -19,13 +19,24 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
-use crate::authentication::reject_anonymous_users;
-use crate::configuration::{
-    CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings,
-};
-use crate::routes::{
-    check_auth, delete_blog_post, get_blog_posts, get_messages, health_check, insert_blog_post,
-    login, logout, patch_message, post_message, publish_blog_post, root,
+use crate::{
+    authentication::reject_anonymous_users,
+    configuration::{ CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
+    routes::{
+        check_auth,
+        delete_blog_post,
+        get_blog_posts,
+        edit_blog_post,
+        publish_blog_post,
+        get_messages,
+        health_check,
+        insert_blog_post,
+        login,
+        logout,
+        patch_message,
+        post_message,
+        root,
+    }
 };
 
 #[derive(serde::Deserialize, Clone)]
@@ -180,9 +191,10 @@ async fn run(
                             .wrap(from_fn(reject_anonymous_users))
                             .route("/messages", web::get().to(get_messages))
                             .route("/messages", web::patch().to(patch_message))
-                            .route("/blog", web::post().to(insert_blog_post))
-                            .route("/blog", web::patch().to(publish_blog_post))
-                            .route("/blog", web::delete().to(delete_blog_post)),
+                            .route("/blog/post", web::post().to(insert_blog_post))
+                            .route("/blog/publish", web::patch().to(publish_blog_post))
+                            .route("/blog/delete", web::delete().to(delete_blog_post))
+                            .route("/blog/edit", web::patch().to(edit_blog_post))
                     ),
             )
             .app_data(db_pool.clone())

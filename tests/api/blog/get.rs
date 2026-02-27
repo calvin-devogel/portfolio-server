@@ -72,7 +72,7 @@ async fn blogs_can_be_filtered_on_published() {
 
     dbg!(&publish_body.post_id);
 
-    let response = app.patch_blog(&publish_body).await;
+    let response = app.publish_blog(&publish_body).await;
     dbg!(&response);
     assert_eq!(response.status().as_u16(), 202);
 
