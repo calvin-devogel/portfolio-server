@@ -2,6 +2,7 @@ use argon2::{
     Algorithm, Argon2, Params, PasswordHasher, Version,
     password_hash::{SaltString, rand_core::OsRng},
 };
+use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
@@ -26,6 +27,23 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
         init_subscriber(subscriber);
     }
 });
+
+#[derive(serde::Serialize)]
+pub struct PublishRequest {
+    pub post_id: Uuid,
+    pub published: bool,
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct GetResponse {
+    pub data: Vec<BlogPostRecord>,
+}
+
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct BlogPostRecord {
+    pub post_id: Uuid,
+    pub published: bool,
+}
 
 #[derive(Debug, serde::Serialize)]
 pub struct TestUser {
@@ -172,9 +190,16 @@ impl TestApp {
             .expect("Failed to send message")
     }
 
-    pub async fn get_blog(&self, on_published: &str) -> reqwest::Response {
+    pub async fn get_blog(&self, on_published: &str, slug: Option<String>) -> reqwest::Response {
+        let mut header_map = HeaderMap::new();
+        // horrible, just horrible
+        header_map.insert("BlogPost-Page", "1".parse().unwrap());
+        header_map.insert("BlogPost-Page-Size", "20".parse().unwrap());
+        header_map.insert("BlogPost-On-Published", on_published.parse().unwrap_or("false".parse().unwrap()));
+        if slug.is_some() { header_map.insert("BlogPost-Slug", slug.unwrap().parse().unwrap()); }
         self.api_client
-            .get(&format!("{}/api/blog?on_published={}", &self.address, on_published))
+            .get(&format!("{}/api/blog", &self.address))
+            .headers(header_map)
             .send()
             .await
             .expect("Failed to get blog posts")

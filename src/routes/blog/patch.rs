@@ -7,7 +7,7 @@ use crate::{authentication::UserId, errors::BlogError, idempotency::execute_idem
 
 #[derive(serde::Deserialize)]
 pub struct BlogPatchRequest {
-    blog_post_id: Uuid,
+    post_id: Uuid,
     published: bool,
 }
 
@@ -32,7 +32,7 @@ async fn process_patch_blog_post(
     transaction: &mut Transaction<'static, Postgres>,
     blog_post: BlogPatchRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = blog_post.blog_post_id;
+    let post_id = blog_post.post_id;
     let is_published = blog_post.published;
 
     let result = sqlx::query!(
@@ -40,7 +40,7 @@ async fn process_patch_blog_post(
         UPDATE blog_posts
         SET published = $2
         WHERE post_id = $1"#,
-        blog_post.blog_post_id,
+        blog_post.post_id,
         is_published
     )
     .execute(transaction.as_mut())
