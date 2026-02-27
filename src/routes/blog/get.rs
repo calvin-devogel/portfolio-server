@@ -21,35 +21,47 @@ struct BlogPostRecord {
     updated_at: DateTime<Utc>,
 }
 
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct BlogPostFilter {
+    on_published: bool
+}
+
 #[tracing::instrument(
     name = "Get blog posts with pagination",
     skip(pool),
     fields(page = %query.page, page_size = %query.page_size)
 )]
 pub async fn get_blog_posts(
+    filter: web::Json<BlogPostFilter>,
     query: web::Query<PaginationQuery>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let q = query.into_inner();
     let offset = q.offset();
     let page_size = q.page_size();
+    let on_published = filter.on_published;
 
-    let total_count = sqlx::query_scalar!("SELECT COUNT(*) FROM blog_posts")
-        .fetch_one(pool.as_ref())
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to get blog post count: {e:?}");
-            BlogError::QueryFailed
-        })?
-        .unwrap_or(0);
+    let total_count = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM blog_posts WHERE (NOT $1 OR published = true)",
+        on_published
+    )
+    .fetch_one(pool.as_ref())
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to get blog post count: {e:?}");
+        BlogError::QueryFailed
+    })?
+    .unwrap_or(0);
 
     let blog_posts = sqlx::query_as!(
         BlogPostRecord,
         r#"
         SELECT post_id, title, slug, content, excerpt, author, published, created_at, updated_at
         FROM blog_posts
+        WHERE (NOT $1 OR published = true)
         ORDER BY created_at DESC
-        LIMIT $1 OFFSET $2"#,
+        LIMIT $2 OFFSET $3"#,
+        on_published,
         page_size,
         offset
     )

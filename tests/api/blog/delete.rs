@@ -27,7 +27,11 @@ async fn authorized_user_can_delete_blogs() {
     let response = app.post_blog(&blog_issue).await;
     assert_eq!(response.status().as_u16(), 202);
 
-    let response = app.get_blog().await;
+    let on_published = serde_json::json!({
+        "on_published": false,
+    });
+
+    let response = app.get_blog(&on_published).await;
 
     assert_eq!(response.status().as_u16(), 200);
     let blogs_response: BlogsResponse = response.json().await.expect("Failed to parse blogs");
@@ -46,7 +50,7 @@ async fn authorized_user_can_delete_blogs() {
 
     assert_eq!(response.status().as_u16(), 200);
 
-    let response = app.get_blog().await;
+    let response = app.get_blog(&on_published).await;
     let blogs_response: BlogsResponse = response.json().await.expect("Failed to parse blogs");
 
     assert!(blogs_response.data.len() == 0);

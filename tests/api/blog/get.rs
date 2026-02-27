@@ -8,7 +8,11 @@ use crate::helpers::spawn_app;
 async fn can_query_blog_posts() {
     let app = spawn_app().await;
 
-    let response = app.get_blog().await;
+    let on_published = serde_json::json!({
+        "on_published": true
+    });
+
+    let response = app.get_blog(&on_published).await;
 
     assert_eq!(response.status().as_u16(), 200);
 }
@@ -28,7 +32,11 @@ async fn blogs_are_returned_when_they_exist() {
     let post_response = app.post_blog(&blog_body).await;
     assert_eq!(post_response.status().as_u16(), 202);
 
-    let response = app.get_blog().await;
+    let on_published = serde_json::json!({
+        "on_published": false
+    });
+
+    let response = app.get_blog(&on_published).await;
     let response_body = response.text().await.unwrap();
     assert!(response_body.contains("fake post content"));
 }
