@@ -1,6 +1,6 @@
 [package]
 name = "portfolio-server"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 
 [lib]
@@ -22,11 +22,11 @@ console-subscriber = { version = "0.5", optional = true }
 actix-cors = "0.7"
 actix-limitation = { version = "0.5" }
 actix-session = { version = "0.11", features = ["redis-session-rustls"]}
-actix-web = { version = "4.12", features = ["rustls"] }
+actix-web = { version = "4.13", features = ["rustls"] }
 actix-web-flash-messages = { version = "0.5", features = ["cookies"] }
 argon2 = { version = "0.5.3", features = ["std"] }
-anyhow = "1.0.101"
-chrono = { version = "0.4.43", default-features = false, features = ["clock", "serde"] }
+anyhow = "1.0.102"
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 config = "0.15.19"
 reqwest = { version = "0.13", default-features = false, features = [
     "json",
@@ -34,7 +34,7 @@ reqwest = { version = "0.13", default-features = false, features = [
     "cookies",
     "form",
 ] }
-rustls = { version = "0.23.36", features = ["aws-lc-rs"] }
+rustls = { version = "0.23.37", features = ["aws-lc-rs"] }
 secrecy = { version = "0.10.3", features = ["serde"] }
 serde = "1.0.228"
 serde-aux = "4.7.0"
