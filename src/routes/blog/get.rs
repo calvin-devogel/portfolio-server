@@ -12,6 +12,29 @@ use crate::{
 // communicating to the client what type of section each entry is
 // (markdown/carousel/maybe others?)
 
+// what does this data type need?
+
+#[derive(serde::Serialize)]
+enum SectionType {
+    Markdown,
+    Carousel
+}
+
+#[derive(serde::Serialize)]
+struct BlogSection {
+    section_type: SectionType,
+    label: Option<String>,
+    slides: Option<String>,
+    section_content: String
+}
+
+#[derive(serde::Serialize)]
+struct BlogPostRecordv2 {
+    post_id: Uuid,
+    title: String,
+    slug: String,
+}
+
 #[derive(serde::Serialize)]
 struct BlogPostRecord {
     post_id: Uuid,
