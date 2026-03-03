@@ -8,6 +8,10 @@ use crate::{
     pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
 };
 
+// TODO: content should change to an array of "type" entries called "sections",
+// communicating to the client what type of section each entry is
+// (markdown/carousel/maybe others?)
+
 #[derive(serde::Serialize)]
 struct BlogPostRecord {
     post_id: Uuid,
