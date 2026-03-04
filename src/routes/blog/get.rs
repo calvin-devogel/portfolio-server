@@ -66,7 +66,7 @@ pub async fn get_articles(
     })?
     .unwrap_or(0);
 
-    let blog_posts: Vec<ArticleRecord> = sqlx::query_as!(
+    let articles: Vec<ArticleRecord> = sqlx::query_as!(
         ArticleRecordRaw,
         r#"
         SELECT
@@ -105,7 +105,7 @@ pub async fn get_articles(
     })?;
 
     let response = PaginatedResponse {
-        data: blog_posts,
+        data: articles,
         pagination: PaginationMeta::from_total(total_count, &pagination),
     };
 
