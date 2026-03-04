@@ -1,65 +1,12 @@
 use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, Transaction};
-use std::ops::Deref;
 use uuid::Uuid;
 
-use crate::{authentication::UserId, errors::BlogError, idempotency::execute_idempotent};
-
-#[derive(serde::Deserialize)]
-pub struct BlogPostForm {
-    title: String,
-    content: String,
-    excerpt: String,
-    author: String,
-}
-
-impl BlogPostForm {
-    fn validate(&self) -> Result<(), BlogError> {
-        let fields = [
-            ("title", &self.title),
-            ("content", &self.content),
-            ("excerpt", &self.excerpt),
-            ("author", &self.author),
-        ];
-
-        for (name, value) in fields {
-            if value.trim().is_empty() {
-                return Err(BlogError::ValidationError(format!("`{name}` must not be empty")));
-            }
-        }
-
-        Ok(())
-    }
-}
-
-#[derive(Clone, Copy, Debug, serde::Serialize)]
-pub struct BlogPostId(Uuid);
-
-impl std::fmt::Display for BlogPostId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl Deref for BlogPostId {
-    type Target = Uuid;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-#[derive(serde::Serialize)]
-struct BlogPostResponse {
-    message: &'static str,
-    post_id: BlogPostId,
-}
-
-impl BlogPostResponse {
-    pub const fn new(message: &'static str, post_id: BlogPostId) -> Self {
-        Self { message, post_id }
-    }
-}
+use crate::{
+    authentication::UserId,
+    errors::BlogError, idempotency::execute_idempotent,
+    types::blog::{ArticleForm, ArticleId, ArticleResponse}
+};
 
 #[tracing::instrument(
     name = "Insert blog post",
@@ -68,8 +15,8 @@ impl BlogPostResponse {
         post_id = tracing::field::Empty
     )
 )]
-pub async fn insert_blog_post(
-    blog_post: web::Json<BlogPostForm>,
+pub async fn insert_article(
+    blog_post: web::Json<ArticleForm>,
     user_id: web::ReqData<UserId>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
@@ -80,18 +27,23 @@ pub async fn insert_blog_post(
     blog_to_post.validate().map_err(actix_web::Error::from)?;
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move { process_new_blog_post(tx, blog_to_post).await })
+        Box::pin(async move { process_new_article(tx, blog_to_post).await })
     })
     .await
 }
 
 #[allow(clippy::future_not_send)]
-async fn process_new_blog_post(
+async fn process_new_article(
     transaction: &mut Transaction<'static, Postgres>,
-    blog_post: BlogPostForm,
+    article: ArticleForm,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = BlogPostId(Uuid::new_v4());
-    let slug = get_blog_post_slug(&blog_post.title);
+    let post_id = ArticleId(Uuid::new_v4());
+    let slug = get_article_slug(&article.title);
+    let sections_json = article
+        .sections_as_json()
+        .map_err(|e|
+            BlogError::UnexpectedError(anyhow::anyhow!("Failed to serialize sections: {e:?}")
+        ))?;
     tracing::Span::current().record("post_id", tracing::field::display(&post_id));
 
     let insert_result = sqlx::query!(
@@ -100,7 +52,7 @@ async fn process_new_blog_post(
         post_id,
         title,
         slug,
-        content,
+        sections,
         excerpt,
         author,
         published,
@@ -108,11 +60,11 @@ async fn process_new_blog_post(
         updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW(), NOW())"#,
         *post_id,
-        blog_post.title,
+        article.title,
         slug,
-        blog_post.content,
-        blog_post.excerpt,
-        blog_post.author
+        sections_json,
+        article.excerpt,
+        article.author
     )
     .execute(transaction.as_mut())
     .await;
@@ -121,7 +73,7 @@ async fn process_new_blog_post(
         Ok(_) => {
             tracing::info!("Post saved successfully with: {}", post_id);
             Ok(HttpResponse::Accepted()
-                .json(BlogPostResponse::new("Post received successfully", post_id)))
+                .json(ArticleResponse::new("Post received successfully", post_id)))
         }
         Err(e) => {
             if let sqlx::Error::Database(db_err) = &e {
@@ -137,7 +89,7 @@ async fn process_new_blog_post(
     }
 }
 
-fn get_blog_post_slug(title: &str) -> String {
+fn get_article_slug(title: &str) -> String {
     title.replace(' ', "-").to_ascii_lowercase()
 }
 
@@ -148,7 +100,7 @@ mod test {
     #[test]
     fn blog_post_slug() {
         let title = "New Blog Title".to_string();
-        let slug = get_blog_post_slug(&title);
+        let slug = get_article_slug(&title);
         assert_eq!(slug, "new-blog-title".to_string())
     }
 }

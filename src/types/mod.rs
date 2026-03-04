@@ -1,3 +1,1 @@
-mod blog;
-
-pub use blog::*;
+pub mod blog;

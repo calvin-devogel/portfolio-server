@@ -1,31 +1,15 @@
 use actix_web::{HttpRequest, HttpResponse, web};
-use chrono::{DateTime, Utc};
 use sqlx::PgPool;
-use uuid::Uuid;
 
 use crate::{
     errors::BlogError,
     pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
+    types::blog::{ArticleRecord, ArticleRecordRaw}
 };
 
 // TODO: content should change to an array of "type" entries called "sections",
 // communicating to the client what type of section each entry is
 // (markdown/carousel/maybe others?)
-
-// what does this data type need?
-
-#[derive(serde::Serialize)]
-struct BlogPostRecord {
-    post_id: Uuid,
-    title: String,
-    slug: String,
-    content: String,
-    excerpt: String,
-    author: String,
-    published: bool,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
-}
 
 fn parse_header_str<'a>(req: &'a HttpRequest, key: &str) -> Option<&'a str> {
     req.headers().get(key)?.to_str().ok()
@@ -45,7 +29,7 @@ fn parse_header<T: std::str::FromStr>(req: &HttpRequest, key: &str) -> Option<T>
         slug,
     )
 )]
-pub async fn get_blog_posts(
+pub async fn get_articles(
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
@@ -82,14 +66,14 @@ pub async fn get_blog_posts(
     })?
     .unwrap_or(0);
 
-    let blog_posts = sqlx::query_as!(
-        BlogPostRecord,
+    let blog_posts: Vec<ArticleRecord> = sqlx::query_as!(
+        ArticleRecordRaw,
         r#"
         SELECT
             post_id,
             title,
             slug,
-            content,
+            sections as "sections: serde_json::Value",
             excerpt,
             author,
             published,
@@ -110,6 +94,13 @@ pub async fn get_blog_posts(
     .await
     .map_err(|e| {
         tracing::error!("Failed to fetch blog posts: {e:?}");
+        BlogError::UnexpectedError(anyhow::anyhow!(e))
+    })?
+    .into_iter()
+    .map(ArticleRecord::try_from)
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| {
+        tracing::error!("Failed to deserialize blog post sections: {e:?}");
         BlogError::UnexpectedError(anyhow::anyhow!(e))
     })?;
 
