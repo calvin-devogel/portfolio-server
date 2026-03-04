@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            post_id,\n            title,\n            slug,\n            content,\n            excerpt,\n            author,\n            published,\n            created_at,\n            updated_at\n        FROM blog_posts\n        WHERE\n            (NOT $1 OR published = true)\n            AND ($2::text IS NULL OR slug = $2)\n        ORDER BY created_at DESC\n        LIMIT $3 OFFSET $4",
+  "query": "\n        SELECT\n            post_id,\n            title,\n            slug,\n            sections as \"sections: serde_json::Value\",\n            excerpt,\n            author,\n            published,\n            created_at,\n            updated_at\n        FROM blog_posts\n        WHERE\n            (NOT $1 OR published = true)\n            AND ($2::text IS NULL OR slug = $2)\n        ORDER BY created_at DESC\n        LIMIT $3 OFFSET $4",
   "describe": {
     "columns": [
       {
@@ -20,8 +20,8 @@
       },
       {
         "ordinal": 3,
-        "name": "content",
-        "type_info": "Text"
+        "name": "sections: serde_json::Value",
+        "type_info": "Jsonb"
       },
       {
         "ordinal": 4,
@@ -69,5 +69,5 @@
       false
     ]
   },
-  "hash": "ad524e31b1b7c53afc24bf7fa98cc5fc9feb49582a042a7f77f445b7dd77980f"
+  "hash": "9c80f9406aea27a4d937f3f155c0e86e65f7c8a000c5fdaf731c2fd3f7ba587e"
 }
