@@ -3,51 +3,46 @@ use uuid::Uuid;
 use crate::helpers::spawn_app;
 
 #[derive(serde::Deserialize, Debug)]
-struct BlogsResponse {
-    data: Vec<BlogPostRecord>,
+struct ArticleResponse {
+    data: Vec<ArticleRecord>,
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
-struct BlogPostRecord {
+struct ArticleRecord {
     post_id: Uuid,
 }
 
 #[tokio::test]
-async fn authorized_user_can_delete_blogs() {
+async fn authorized_user_can_delete_articles() {
     let app = spawn_app().await;
     app.test_user.login(&app).await;
 
-    let blog_issue = serde_json::json!({
+    let article = serde_json::json!({
         "title": "Title",
-        "content": "fake blog content",
+        "sections": [{"type": "markdown", "content": "fake post content..."}],
         "excerpt": "fake blog...",
         "author": "Andy Admin"
     });
 
-    let response = app.post_blog(&blog_issue).await;
+    let response = app.post_article(&article).await;
     assert_eq!(response.status().as_u16(), 202);
 
-    let response = app.get_blog("false", None).await;
+    let response = app.get_article("false", None).await;
 
     assert_eq!(response.status().as_u16(), 200);
-    let blogs_response: BlogsResponse = response.json().await.expect("Failed to parse blogs");
+    let blogs_response: ArticleResponse = response.json().await.expect("Failed to parse blogs");
 
     let blog_post_id = blogs_response.data[0].post_id;
 
     let blog_to_delete = serde_json::json!({
-        "blog_post_id": blog_post_id,
+        "post_id": blog_post_id,
     });
 
-    let response = app.delete_blog(&blog_to_delete).await;
-    // let response_body = response.text().await.unwrap();
-
-    // dbg!(response_body);
-    // assert!(1 == 2);
-
+    let response = app.delete_article(&blog_to_delete).await;
     assert_eq!(response.status().as_u16(), 200);
 
-    let response = app.get_blog("false", None).await;
-    let blogs_response: BlogsResponse = response.json().await.expect("Failed to parse blogs");
+    let response = app.get_article("false", None).await;
+    let blogs_response: ArticleResponse = response.json().await.expect("Failed to parse blogs");
 
     assert!(blogs_response.data.len() == 0);
 }

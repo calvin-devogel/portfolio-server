@@ -24,13 +24,13 @@ use crate::{
     configuration::{ CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
         check_auth,
-        delete_blog_post,
-        get_blog_posts,
-        edit_blog_post,
-        publish_blog_post,
+        delete_article,
+        get_articles,
+        edit_article,
+        publish_article,
         get_messages,
         health_check,
-        insert_blog_post,
+        insert_article,
         login,
         logout,
         patch_message,
@@ -167,7 +167,7 @@ async fn run(
                     .route("/logout", web::post().to(logout))
                     .route("/check_auth", web::get().to(check_auth))
                     .route("/contact", web::post().to(post_message))
-                    .route("/blog", web::get().to(get_blog_posts))
+                    .route("/blog", web::get().to(get_articles))
                     .service(
                         web::scope("/admin")
                             .wrap({
@@ -191,10 +191,10 @@ async fn run(
                             .wrap(from_fn(reject_anonymous_users))
                             .route("/messages", web::get().to(get_messages))
                             .route("/messages", web::patch().to(patch_message))
-                            .route("/blog/post", web::post().to(insert_blog_post))
-                            .route("/blog/publish", web::patch().to(publish_blog_post))
-                            .route("/blog/delete", web::delete().to(delete_blog_post))
-                            .route("/blog/edit", web::patch().to(edit_blog_post))
+                            .route("/blog/post", web::post().to(insert_article))
+                            .route("/blog/publish", web::patch().to(publish_article))
+                            .route("/blog/delete", web::delete().to(delete_article))
+                            .route("/blog/edit", web::patch().to(edit_article))
                     ),
             )
             .app_data(db_pool.clone())

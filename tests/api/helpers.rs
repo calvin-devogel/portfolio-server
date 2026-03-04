@@ -29,37 +29,53 @@ static TRACING: LazyLock<()> = LazyLock::new(|| {
     }
 });
 
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+pub struct CarouselImage {
+    pub src: String,
+    pub alt: Option<String>,
+    pub caption: Option<String>,
+}
+
+#[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ArticleSection {
+    Markdown { content: String },
+    Carousel { label: String, slides: Vec<CarouselImage> },
+}
+
+#[derive(serde::Deserialize, Debug)]
+pub struct GetResponse {
+    pub data: Vec<ArticleRecord>,
+}
+
+#[derive(serde::Deserialize, Clone, Debug)]
+pub struct ArticleRecord {
+    pub post_id: Uuid,
+    pub title: String,
+    pub slug: String,
+    pub sections: Vec<ArticleSection>,
+    pub excerpt: String,
+    pub author: String,
+    pub published: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+
 #[derive(serde::Serialize)]
 pub struct PublishRequest {
     pub post_id: Uuid,
     pub published: bool,
 }
 
+
 #[derive(serde::Serialize)]
 pub struct EditRequest {
     pub post_id: Uuid,
     pub title: Option<String>,
-    pub content: Option<String>,
+    pub sections: Option<Vec<serde_json::Value>>,
     pub excerpt: Option<String>,
     pub author: Option<String>,
-}
-
-#[derive(serde::Deserialize, Debug)]
-pub struct GetResponse {
-    pub data: Vec<BlogPostRecord>,
-}
-
-#[derive(serde::Deserialize, Clone, Debug)]
-pub struct BlogPostRecord {
-    pub post_id: Uuid,
-    pub title: String,
-    pub slug: String,
-    pub content: String,
-    pub excerpt: String,
-    pub author: String,
-    pub published: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -207,7 +223,7 @@ impl TestApp {
             .expect("Failed to send message")
     }
 
-    pub async fn get_blog(&self, on_published: &str, slug: Option<String>) -> reqwest::Response {
+    pub async fn get_article(&self, on_published: &str, slug: Option<String>) -> reqwest::Response {
         let mut header_map = HeaderMap::new();
         // horrible, just horrible
         header_map.insert("BlogPost-Page", "1".parse().unwrap());
@@ -222,7 +238,7 @@ impl TestApp {
             .expect("Failed to get blog posts")
     }
 
-    pub async fn post_blog<Body>(&self, body: &Body) -> reqwest::Response
+    pub async fn post_article<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize,
     {
@@ -232,10 +248,10 @@ impl TestApp {
             .json(&body)
             .send()
             .await
-            .expect("Failed to post blog entry")
+            .expect("Failed to post blog article")
     }
 
-    pub async fn publish_blog<Body>(&self, body: &Body) -> reqwest::Response
+    pub async fn publish_article<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize,
     {
@@ -245,10 +261,10 @@ impl TestApp {
             .json(&body)
             .send()
             .await
-            .expect("Failed to publish blog entry")
+            .expect("Failed to publish blog article")
     }
 
-    pub async fn edit_blog<Body>(&self, body: &Body) -> reqwest::Response
+    pub async fn edit_article<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize,
     {
@@ -258,10 +274,10 @@ impl TestApp {
             .json(&body)
             .send()
             .await
-            .expect("Failed to edit blog post")
+            .expect("Failed to edit blog article")
     }
 
-    pub async fn delete_blog<Body>(&self, body: &Body) -> reqwest::Response
+    pub async fn delete_article<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize,
     {
@@ -271,7 +287,7 @@ impl TestApp {
             .json(&body)
             .send()
             .await
-            .expect("Failed to delete blog")
+            .expect("Failed to delete article")
     }
 }
 

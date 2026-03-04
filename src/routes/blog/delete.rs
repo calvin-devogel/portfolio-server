@@ -1,40 +1,39 @@
 use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, Transaction};
-use uuid::Uuid;
 
-use crate::{authentication::UserId, errors::BlogError, idempotency::execute_idempotent};
-
-#[derive(serde::Deserialize)]
-pub struct BlogDeleteRequest {
-    blog_post_id: Uuid,
-}
+use crate::{
+    authentication::UserId,
+    errors::BlogError,
+    idempotency::execute_idempotent,
+    types::article::ArticleDeleteRequest,
+};
 
 #[tracing::instrument(
     name = "Delete blog post",
     skip_all,
-    fields(user_id = %*user_id, blog_post_id = %blog_delete.blog_post_id)
+    fields(user_id = %*user_id, article_id = %article.post_id)
 )]
-pub async fn delete_blog_post(
-    blog_delete: web::Json<BlogDeleteRequest>,
+pub async fn delete_article(
+    article: web::Json<ArticleDeleteRequest>,
     user_id: web::ReqData<UserId>,
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_to_delete = blog_delete.0;
+    let article_to_delete = article.0;
     let user_id = Some(**user_id);
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move { process_delete_blog_post(tx, post_to_delete).await })
+        Box::pin(async move { process_delete_article(tx, article_to_delete).await })
     })
     .await
 }
 
 #[allow(clippy::future_not_send)]
-async fn process_delete_blog_post(
+async fn process_delete_article(
     transaction: &mut Transaction<'static, Postgres>,
-    blog_post: BlogDeleteRequest,
+    article: ArticleDeleteRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = blog_post.blog_post_id;
+    let post_id = article.post_id;
 
     let result = sqlx::query!(
         r#"
