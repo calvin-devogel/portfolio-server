@@ -6,47 +6,37 @@ use sqlx::{
     Transaction,
     QueryBuilder,
 };
-use uuid::Uuid;
 
-use crate::{authentication::UserId, errors::BlogError, idempotency::execute_idempotent};
-
-#[derive(serde::Deserialize)]
-pub struct BlogPatchRequest {
-    post_id: Uuid,
-    published: bool,
-}
-
-#[derive(serde::Deserialize)]
-pub struct BlogEditRequest {
-    post_id: Uuid,
-    title: Option<String>,
-    content: Option<String>,
-    excerpt: Option<String>,
-    author: Option<String>,
-}
+use crate::{
+    authentication::UserId,
+    // ArticleError?
+    errors::BlogError,
+    idempotency::execute_idempotent,
+    types::article::{ArticlePublishRequest, ArticleEditRequest},
+};
 
 #[tracing::instrument(name = "Edit blog post", skip_all)]
-pub async fn edit_blog_post(
-    blog_edit_request: web::Json<BlogEditRequest>,
+pub async fn edit_article(
+    article_edit_request: web::Json<ArticleEditRequest>,
     user_id: web::ReqData<UserId>,
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let blog_to_edit = blog_edit_request.into_inner();
+    let article_to_edit = article_edit_request.into_inner();
     let user_id = Some(*user_id.into_inner());
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move { process_edit_blog_post(tx, blog_to_edit).await })
+        Box::pin(async move { process_edit_article(tx, article_to_edit).await })
     })
     .await
 }
 
 #[allow(clippy::future_not_send)]
-async fn process_edit_blog_post(
+async fn process_edit_article(
     transaction: &mut Transaction<'static, Postgres>,
-    blog_post: BlogEditRequest,
+    article: ArticleEditRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = blog_post.post_id;
+    let post_id = article.post_id;
 
     let mut builder = QueryBuilder::<Postgres>::new("UPDATE blog_posts SET ");
     let mut separator = builder.separated(", ");
@@ -61,10 +51,16 @@ async fn process_edit_blog_post(
         };
     }
 
-    push_if_some!(blog_post.title, "title");
-    push_if_some!(blog_post.content, "content");
-    push_if_some!(blog_post.excerpt, "excerpt");
-    push_if_some!(blog_post.author, "author");
+    push_if_some!(article.title, "title");
+    push_if_some!(article.excerpt, "excerpt");
+    push_if_some!(article.author, "author");
+
+    if let Some(sections) = article.sections {
+        let sections_json = serde_json::to_value(&sections)
+            .map_err(|e| BlogError::UnexpectedError(anyhow::anyhow!(e)))?;
+        separator.push("sections = ");
+        separator.push_bind_unseparated(sections_json);
+    }
 
     builder.push(", updated_at = NOW() WHERE post_id = ");
     builder.push_bind(post_id);
@@ -107,35 +103,35 @@ async fn process_edit_blog_post(
 }
 
 #[tracing::instrument(name = "Publish blog post", skip_all)]
-pub async fn publish_blog_post(
-    blog_patch: web::Json<BlogPatchRequest>,
+pub async fn publish_article(
+    article: web::Json<ArticlePublishRequest>,
     user_id: web::ReqData<UserId>,
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let blog_to_publish = blog_patch.0;
+    let article_to_publish = article.0;
     let user_id = Some(*user_id.into_inner());
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move { process_publish_blog_post(tx, blog_to_publish).await })
+        Box::pin(async move { process_publish_article(tx, article_to_publish).await })
     })
     .await
 }
 
 #[allow(clippy::future_not_send)]
-async fn process_publish_blog_post(
+async fn process_publish_article(
     transaction: &mut Transaction<'static, Postgres>,
-    blog_post: BlogPatchRequest,
+    article: ArticlePublishRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = blog_post.post_id;
-    let is_published = blog_post.published;
+    let post_id = article.post_id;
+    let is_published = article.published;
 
     let result = sqlx::query!(
         r#"
         UPDATE blog_posts
         SET published = $2, updated_at = NOW()
         WHERE post_id = $1"#,
-        blog_post.post_id,
+        article.post_id,
         is_published
     )
     .execute(transaction.as_mut())

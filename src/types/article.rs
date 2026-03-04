@@ -153,22 +153,22 @@ impl ArticleForm {
 
 #[derive(serde::Deserialize)]
 pub struct ArticleDeleteRequest {
-    post_id: Uuid,
+    pub post_id: Uuid,
 }
 
 #[derive(serde::Deserialize)]
 pub struct ArticlePublishRequest {
-    post_id: Uuid,
-    published: bool,
+    pub post_id: Uuid,
+    pub published: bool,
 }
 
 #[derive(serde::Deserialize)]
 pub struct ArticleEditRequest {
-    post_id: Uuid,
-    title: Option<String>,
-    sections: Option<Vec<ArticleSection>>,
-    excerpt: Option<String>,
-    author: Option<String>,
+    pub post_id: Uuid,
+    pub title: Option<String>,
+    pub sections: Option<Vec<ArticleSection>>,
+    pub excerpt: Option<String>,
+    pub author: Option<String>,
 }
 
 impl ArticleEditRequest {

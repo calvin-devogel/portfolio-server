@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::{
     authentication::UserId,
     errors::BlogError, idempotency::execute_idempotent,
-    types::blog::{ArticleForm, ArticleId, ArticleResponse}
+    types::article::{ArticleForm, ArticleId, ArticleResponse}
 };
 
 #[tracing::instrument(
@@ -98,7 +98,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn blog_post_slug() {
+    fn article_slug() {
         let title = "New Blog Title".to_string();
         let slug = get_article_slug(&title);
         assert_eq!(slug, "new-blog-title".to_string())
