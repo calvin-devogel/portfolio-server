@@ -32,6 +32,7 @@ pub async fn try_processing(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
+    operation: &str,
 ) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), IdempotencyError> {
     let mut transaction = pool.begin().await?;
     let query = sqlx::query!(
@@ -39,22 +40,25 @@ pub async fn try_processing(
         INSERT INTO idempotency (
             user_id,
             idempotency_key,
+            operation,
             created_at
         )
-        VALUES ($1, $2, now())
+        VALUES ($1, $2, $3, now())
         ON CONFLICT DO NOTHING
         "#,
         user_id, // can be NULL now
-        idempotency_key.as_ref()
+        idempotency_key.as_ref(),
+        operation
     );
     let n_inserted_rows = transaction.execute(query).await?.rows_affected();
     if n_inserted_rows > 0 {
         Ok((NextAction::StartProcessing, Some(transaction)))
     } else {
-        let saved_response = get_saved_response(pool, idempotency_key, user_id)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("We expected a saved response, we didn't find it"))?;
-        Ok((NextAction::ReturnSavedResponse(saved_response), None))
+        let saved_response = get_saved_response(pool, idempotency_key, user_id, operation).await?;
+        match saved_response {
+            Some(response) => Ok((NextAction::ReturnSavedResponse(response), None)),
+            None => Err(IdempotencyError::RequestInFlight)
+        }
     }
 }
 
@@ -68,6 +72,7 @@ pub async fn save_response(
     mut transaction: Transaction<'static, Postgres>,
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
+    operation: &str,
     http_response: HttpResponse,
 ) -> Result<HttpResponse, IdempotencyError> {
     let (response_head, body) = http_response.into_parts();
@@ -95,13 +100,15 @@ pub async fn save_response(
                     response_body = $5
                 WHERE
                     idempotency_key = $2
+                    AND operation = $6
                     AND (user_id = $1 OR (user_id IS NULL AND $1 IS NULL))
                 "#,
             user_id,
             idempotency_key.as_ref(),
             status_code,
             headers,
-            body.as_ref()
+            body.as_ref(),
+            operation
         ))
         .await?;
     transaction.commit().await?;
@@ -124,6 +131,7 @@ pub async fn get_saved_response(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
+    operation: &str,
 ) -> Result<Option<HttpResponse>, anyhow::Error> {
     let saved_response = sqlx::query!(
         r#"
@@ -134,10 +142,12 @@ pub async fn get_saved_response(
         FROM idempotency
         WHERE
             idempotency_key = $2
+            AND operation = $3
             AND (user_id = $1 OR (user_id IS NULL AND $1 IS NULL))
         "#,
         user_id,
-        idempotency_key.as_ref()
+        idempotency_key.as_ref(),
+        operation
     )
     .fetch_optional(pool)
     .await?;
@@ -182,7 +192,7 @@ pub async fn execute_idempotent<F, E>(
     request: &HttpRequest,
     pool: &PgPool,
     user_id: Option<Uuid>,
-    operation: F,
+    action: F,
 ) -> Result<HttpResponse, E>
 where
     F: for<'a> FnOnce(
@@ -191,15 +201,18 @@ where
     E: From<IdempotencyError>,
 {
     let key = get_idempotency_key(&request.clone()).map_err(E::from)?;
-    let (action, tx_opt) = try_processing(pool, &key, user_id).await.map_err(E::from)?;
+    let operation = format!("{}:{}", request.method().as_str(), request.path());
+    let (next, tx_opt) = try_processing(pool, &key, user_id, &operation)
+        .await
+        .map_err(E::from)?;
 
-    match (action, tx_opt) {
+    match (next, tx_opt) {
         (NextAction::ReturnSavedResponse(saved_response), _) => Ok(saved_response),
 
         (NextAction::StartProcessing, Some(mut tx)) => {
             // wrap all this in tx
-            let response = operation(&mut tx).await?;
-            let response = save_response(tx, &key, user_id, response)
+            let response = action(&mut tx).await?;
+            let response = save_response(tx, &key, user_id, &operation, response)
                 .await
                 .map_err(E::from)?;
             Ok(response)

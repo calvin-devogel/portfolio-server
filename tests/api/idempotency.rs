@@ -5,12 +5,15 @@ use portfolio_server::idempotency::{
 };
 use uuid::Uuid;
 
+const ANONYMOUS_OPERATION: &str = "POST:/api/contact";
+const AUTHORIZED_OPERATION: &str = "PATCH:/api/admin/messages";
+
 #[tokio::test]
 async fn try_processing_returns_start_processing_for_new_key() {
     let app = spawn_app().await;
     let key = IdempotencyKey::try_from("test-key-123".to_string()).unwrap();
 
-    let (action, transaction) = try_processing(&app.db_pool, &key, None)
+    let (action, transaction) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Failed to process");
 
@@ -24,7 +27,7 @@ async fn try_processing_returns_saved_response_for_duplicate_key() {
     let key = IdempotencyKey::try_from("duplicate-key".to_string()).unwrap();
 
     // act 1: process and save
-    let (action, transaction) = try_processing(&app.db_pool, &key, None)
+    let (action, transaction) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Failed to process first request");
 
@@ -35,12 +38,12 @@ async fn try_processing_returns_saved_response_for_duplicate_key() {
         .insert_header(("X-Test-Header", "test-value"))
         .body("Test response body");
 
-    save_response(transaction, &key, None, response)
+    save_response(transaction, &key, None, ANONYMOUS_OPERATION, response)
         .await
         .expect("Failed to save response");
 
     // act 2: try processing, should return saved response
-    let (action, transaction) = try_processing(&app.db_pool, &key, None)
+    let (action, transaction) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Failed to process second request");
 
@@ -59,17 +62,17 @@ async fn save_response_persists_status_code_and_body() {
     let app = spawn_app().await;
     let key = IdempotencyKey::try_from("persist-test".to_string()).unwrap();
 
-    let (_, transaction) = try_processing(&app.db_pool, &key, None)
+    let (_, transaction) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Failed to start processing");
 
     let response = HttpResponse::Accepted().body("Message received");
 
-    save_response(transaction.unwrap(), &key, None, response)
+    save_response(transaction.unwrap(), &key, None, ANONYMOUS_OPERATION, response)
         .await
         .expect("Failed to save");
 
-    let saved = get_saved_response(&app.db_pool, &key, None)
+    let saved = get_saved_response(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Failed to retrieve")
         .expect("Response not found");
@@ -82,7 +85,7 @@ async fn save_response_persists_headers() {
     let app = spawn_app().await;
     let key = IdempotencyKey::try_from("header-test".to_string()).unwrap();
 
-    let (_, transaction) = try_processing(&app.db_pool, &key, None)
+    let (_, transaction) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Failed to start processing");
 
@@ -91,11 +94,11 @@ async fn save_response_persists_headers() {
         .insert_header(("X-Custom-Header", "custom-value"))
         .body(r#"{"status":"ok"}"#);
 
-    save_response(transaction.unwrap(), &key, None, response)
+    save_response(transaction.unwrap(), &key, None, ANONYMOUS_OPERATION, response)
         .await
         .expect("Failed to save");
 
-    let saved = get_saved_response(&app.db_pool, &key, None)
+    let saved = get_saved_response(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Failed to retrieve")
         .expect("Response not found");
@@ -117,7 +120,7 @@ async fn get_saved_response_returns_none_for_nonexistent_key() {
     let app = spawn_app().await;
     let key = IdempotencyKey::try_from("nonexistent".to_string()).unwrap();
 
-    let result = get_saved_response(&app.db_pool, &key, None)
+    let result = get_saved_response(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
         .expect("Query failed");
 
@@ -131,17 +134,17 @@ async fn idempotency_works_with_user_scoped_keys() {
     let user_id = Uuid::new_v4();
 
     // save response for specific user
-    let (_, transaction) = try_processing(&app.db_pool, &key, Some(user_id))
+    let (_, transaction) = try_processing(&app.db_pool, &key, Some(user_id), AUTHORIZED_OPERATION)
         .await
         .expect("Failed to process");
 
     let response = HttpResponse::Ok().body("User-specific response");
-    save_response(transaction.unwrap(), &key, Some(user_id), response)
+    save_response(transaction.unwrap(), &key, Some(user_id), AUTHORIZED_OPERATION, response)
         .await
         .expect("Failed to save");
 
     // retrieve with correct user_id
-    let saved = get_saved_response(&app.db_pool, &key, Some(user_id))
+    let saved = get_saved_response(&app.db_pool, &key, Some(user_id), AUTHORIZED_OPERATION)
         .await
         .expect("Failed to retrieve")
         .expect("Response not found");
@@ -150,7 +153,7 @@ async fn idempotency_works_with_user_scoped_keys() {
 
     // different user shouldn't see the response
     let other_user = Uuid::new_v4();
-    let other_result = get_saved_response(&app.db_pool, &key, Some(other_user))
+    let other_result = get_saved_response(&app.db_pool, &key, Some(other_user), AUTHORIZED_OPERATION)
         .await
         .expect("Query failed");
 
@@ -164,12 +167,34 @@ async fn different_keys_dont_interfere() {
     let key2 = IdempotencyKey::try_from("key-two".to_string()).unwrap();
 
     // Process both keys
-    let (action1, tx1) = try_processing(&app.db_pool, &key1, None).await.unwrap();
-    let (action2, tx2) = try_processing(&app.db_pool, &key2, None).await.unwrap();
+    let (action1, tx1) = try_processing(&app.db_pool, &key1, None, ANONYMOUS_OPERATION).await.unwrap();
+    let (action2, tx2) = try_processing(&app.db_pool, &key2, None, ANONYMOUS_OPERATION).await.unwrap();
 
     // Both should be new
     assert!(matches!(action1, NextAction::StartProcessing));
     assert!(matches!(action2, NextAction::StartProcessing));
     assert!(tx1.is_some());
+    assert!(tx2.is_some());
+}
+
+#[tokio::test]
+async fn same_key_different_operations_dont_interfere() {
+    let app = spawn_app().await;
+    let key = IdempotencyKey::try_from("shared-key".to_string()).unwrap();
+
+    // anonymous op first
+    let (action1, tx1) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION).await.unwrap();
+    assert!(matches!(action1, NextAction::StartProcessing));
+    let response1 = HttpResponse::Accepted().body("contact ok");
+    save_response(tx1.unwrap(), &key, None, ANONYMOUS_OPERATION, response1)
+        .await
+        .expect("Failed to save first response");
+
+    // same key different op, shouldn't conflict
+    let (action2, tx2) = try_processing(&app.db_pool, &key, None, AUTHORIZED_OPERATION).await.unwrap();
+    assert!(
+        matches!(action2, NextAction::StartProcessing),
+        "Same key under a different operation should start fresh"
+    );
     assert!(tx2.is_some());
 }
