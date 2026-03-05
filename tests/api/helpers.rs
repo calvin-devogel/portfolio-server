@@ -128,7 +128,7 @@ impl TestUser {
     }
 
     pub async fn enable_totp(&self, pool: &PgPool) -> TOTP {
-        const SECRET_B32: &str = "JBSWY3DPEHPK3PXP";
+        const SECRET_B32: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PX";
         sqlx::query!(
             "UPDATE users SET totp_secret = $1, totp_enabled = TRUE WHERE user_id = $2",
             SECRET_B32,
@@ -149,7 +149,7 @@ impl TestUser {
             None,
             "test".to_string(),
         )
-        .expect("Failed to biuld test TOTP")
+        .expect("Failed to build test TOTP")
 
     }
 }
