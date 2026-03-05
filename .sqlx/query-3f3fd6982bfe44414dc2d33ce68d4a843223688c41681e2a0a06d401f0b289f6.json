@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT user_id, password_hash\n        FROM users\n        WHERE username = $1\n        ",
+  "query": "\n        SELECT user_id, password_hash, totp_enabled\n        FROM users\n        WHERE username = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -12,6 +12,11 @@
         "ordinal": 1,
         "name": "password_hash",
         "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "totp_enabled",
+        "type_info": "Bool"
       }
     ],
     "parameters": {
@@ -21,8 +26,9 @@
     },
     "nullable": [
       false,
+      false,
       false
     ]
   },
-  "hash": "acf1b96c82ddf18db02e71a0e297c822b46f10add52c54649cf599b883165e58"
+  "hash": "3f3fd6982bfe44414dc2d33ce68d4a843223688c41681e2a0a06d401f0b289f6"
 }
