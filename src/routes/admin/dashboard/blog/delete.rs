@@ -2,9 +2,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, Transaction};
 
 use crate::{
-    authentication::UserId,
-    errors::BlogError,
-    idempotency::execute_idempotent,
+    authentication::UserId, errors::BlogError, idempotency::execute_idempotent,
     types::article::ArticleDeleteRequest,
 };
 

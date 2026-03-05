@@ -7,7 +7,7 @@
 use actix_web::{HttpResponse, web};
 use anyhow::Context;
 use sqlx::PgPool;
-use totp_rs::{Algorithm, TOTP, Secret};
+use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::session_state::TypedSession;
 use crate::utils::e500;
@@ -22,7 +22,7 @@ pub struct VerifyTotpRequest {
 pub async fn verify_totp(
     request: web::Json<VerifyTotpRequest>,
     pool: web::Data<PgPool>,
-    session: TypedSession
+    session: TypedSession,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = session
         .get_mfa_pending_user_id()
@@ -34,14 +34,14 @@ pub async fn verify_totp(
         .map_err(e500)?
         .ok_or_else(|| actix_web::error::ErrorUnauthorized("TOTP not configured for user"))?;
 
-    let totp= TOTP::new(
+    let totp = TOTP::new(
         Algorithm::SHA1,
         6,
         1,
         30,
         Secret::Encoded(totp_secret).to_bytes().map_err(e500)?,
         None,
-        user_id.into()
+        user_id.into(),
     )
     .map_err(e500)?;
 

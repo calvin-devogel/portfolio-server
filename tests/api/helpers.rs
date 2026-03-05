@@ -7,8 +7,8 @@ use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
+use totp_rs::{Secret, TOTP};
 use uuid::Uuid;
-use totp_rs::{TOTP, Secret};
 
 use portfolio_server::{
     configuration::{DatabaseSettings, get_configuration},
@@ -40,8 +40,13 @@ pub struct CarouselImage {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ArticleSection {
-    Markdown { content: String },
-    Carousel { label: String, slides: Vec<CarouselImage> },
+    Markdown {
+        content: String,
+    },
+    Carousel {
+        label: String,
+        slides: Vec<CarouselImage>,
+    },
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -62,13 +67,11 @@ pub struct ArticleRecord {
     pub updated_at: DateTime<Utc>,
 }
 
-
 #[derive(serde::Serialize)]
 pub struct PublishRequest {
     pub post_id: Uuid,
     pub published: bool,
 }
-
 
 #[derive(serde::Serialize)]
 pub struct EditRequest {
@@ -150,7 +153,6 @@ impl TestUser {
             "test".to_string(),
         )
         .expect("Failed to build test TOTP")
-
     }
 }
 
@@ -255,8 +257,13 @@ impl TestApp {
         // horrible, just horrible
         header_map.insert("BlogPost-Page", "1".parse().unwrap());
         header_map.insert("BlogPost-Page-Size", "20".parse().unwrap());
-        header_map.insert("BlogPost-On-Published", on_published.parse().unwrap_or("false".parse().unwrap()));
-        if slug.is_some() { header_map.insert("BlogPost-Slug", slug.unwrap().parse().unwrap()); }
+        header_map.insert(
+            "BlogPost-On-Published",
+            on_published.parse().unwrap_or("false".parse().unwrap()),
+        );
+        if slug.is_some() {
+            header_map.insert("BlogPost-Slug", slug.unwrap().parse().unwrap());
+        }
         self.api_client
             .get(&format!("{}/api/blog", &self.address))
             .headers(header_map)
@@ -321,6 +328,32 @@ impl TestApp {
         self.api_client
             .post(&format!("{}/api/verify_totp", &self.address))
             .json(&serde_json::json!({ "code": code }))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn get_totp_setup(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/api/admin/totp/setup", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn post_totp_confirm(&self, code: &str) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/api/admin/totp/confirm", &self.address))
+            .json(&serde_json::json!({ "code": code }))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn post_totp_disable(&self, password: &str) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/api/admin/totp/disable", &self.address))
+            .json(&serde_json::json!({ "password": password }))
             .send()
             .await
             .expect("Failed to execute request.")

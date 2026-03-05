@@ -30,7 +30,13 @@ async fn get_stored_credentials(
     .fetch_optional(pool)
     .await
     .context("Failed to perform a query to retrieve stored credentials.")?
-    .map(|row| (row.user_id, SecretString::new(row.password_hash.into()), row.totp_enabled));
+    .map(|row| {
+        (
+            row.user_id,
+            SecretString::new(row.password_hash.into()),
+            row.totp_enabled,
+        )
+    });
     Ok(row)
 }
 
@@ -46,20 +52,21 @@ pub async fn validate_credentials(
     let mut totp_enabled = false;
     // this is a made-up hash to prevent timing attacks
     // thanks clippy what the fuck is this?
-    let expected_password_hash = if let Some((stored_user_id, stored_password_hash, stored_totp_enabled)) =
-        get_stored_credentials(&credentials.username, pool).await?
-    {
-        user_id = Some(stored_user_id);
-        totp_enabled = stored_totp_enabled;
-        stored_password_hash
-    } else {
-        SecretString::new(
-            "$argon2id$v=19$m=19456,t=2,p=1$\
+    let expected_password_hash =
+        if let Some((stored_user_id, stored_password_hash, stored_totp_enabled)) =
+            get_stored_credentials(&credentials.username, pool).await?
+        {
+            user_id = Some(stored_user_id);
+            totp_enabled = stored_totp_enabled;
+            stored_password_hash
+        } else {
+            SecretString::new(
+                "$argon2id$v=19$m=19456,t=2,p=1$\
                 gZiV/M1gPc22ElAH/Jh1Hw$\
                 CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
-                .into(),
-        )
-    };
+                    .into(),
+            )
+        };
 
     spawn_blocking_with_tracing(move || {
         verify_password_hash(&expected_password_hash, &credentials.password)

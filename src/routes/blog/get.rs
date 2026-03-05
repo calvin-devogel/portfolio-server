@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use crate::{
     errors::BlogError,
     pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
-    types::article::{ArticleRecord, ArticleRecordRaw}
+    types::article::{ArticleRecord, ArticleRecordRaw},
 };
 
 // TODO: content should change to an array of "type" entries called "sections",
@@ -22,12 +22,7 @@ fn parse_header<T: std::str::FromStr>(req: &HttpRequest, key: &str) -> Option<T>
 #[tracing::instrument(
     name = "Get blog posts with pagination",
     skip(pool),
-    fields(
-        page,
-        page_size,
-        on_published,
-        slug,
-    )
+    fields(page, page_size, on_published, slug,)
 )]
 pub async fn get_articles(
     request: HttpRequest,

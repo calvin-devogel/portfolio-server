@@ -34,7 +34,7 @@ pub async fn login(
         Ok((user_id, totp_enabled)) => {
             tracing::Span::current().record("user_id", tracing::field::display(&user_id));
             session.renew();
-            
+
             if totp_enabled {
                 session
                     .insert_mfa_pending_user_id(user_id)

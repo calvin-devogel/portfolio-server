@@ -68,9 +68,15 @@ async fn save_response_persists_status_code_and_body() {
 
     let response = HttpResponse::Accepted().body("Message received");
 
-    save_response(transaction.unwrap(), &key, None, ANONYMOUS_OPERATION, response)
-        .await
-        .expect("Failed to save");
+    save_response(
+        transaction.unwrap(),
+        &key,
+        None,
+        ANONYMOUS_OPERATION,
+        response,
+    )
+    .await
+    .expect("Failed to save");
 
     let saved = get_saved_response(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
@@ -94,9 +100,15 @@ async fn save_response_persists_headers() {
         .insert_header(("X-Custom-Header", "custom-value"))
         .body(r#"{"status":"ok"}"#);
 
-    save_response(transaction.unwrap(), &key, None, ANONYMOUS_OPERATION, response)
-        .await
-        .expect("Failed to save");
+    save_response(
+        transaction.unwrap(),
+        &key,
+        None,
+        ANONYMOUS_OPERATION,
+        response,
+    )
+    .await
+    .expect("Failed to save");
 
     let saved = get_saved_response(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
         .await
@@ -139,9 +151,15 @@ async fn idempotency_works_with_user_scoped_keys() {
         .expect("Failed to process");
 
     let response = HttpResponse::Ok().body("User-specific response");
-    save_response(transaction.unwrap(), &key, Some(user_id), AUTHORIZED_OPERATION, response)
-        .await
-        .expect("Failed to save");
+    save_response(
+        transaction.unwrap(),
+        &key,
+        Some(user_id),
+        AUTHORIZED_OPERATION,
+        response,
+    )
+    .await
+    .expect("Failed to save");
 
     // retrieve with correct user_id
     let saved = get_saved_response(&app.db_pool, &key, Some(user_id), AUTHORIZED_OPERATION)
@@ -153,9 +171,10 @@ async fn idempotency_works_with_user_scoped_keys() {
 
     // different user shouldn't see the response
     let other_user = Uuid::new_v4();
-    let other_result = get_saved_response(&app.db_pool, &key, Some(other_user), AUTHORIZED_OPERATION)
-        .await
-        .expect("Query failed");
+    let other_result =
+        get_saved_response(&app.db_pool, &key, Some(other_user), AUTHORIZED_OPERATION)
+            .await
+            .expect("Query failed");
 
     assert!(other_result.is_none());
 }
@@ -167,8 +186,12 @@ async fn different_keys_dont_interfere() {
     let key2 = IdempotencyKey::try_from("key-two".to_string()).unwrap();
 
     // Process both keys
-    let (action1, tx1) = try_processing(&app.db_pool, &key1, None, ANONYMOUS_OPERATION).await.unwrap();
-    let (action2, tx2) = try_processing(&app.db_pool, &key2, None, ANONYMOUS_OPERATION).await.unwrap();
+    let (action1, tx1) = try_processing(&app.db_pool, &key1, None, ANONYMOUS_OPERATION)
+        .await
+        .unwrap();
+    let (action2, tx2) = try_processing(&app.db_pool, &key2, None, ANONYMOUS_OPERATION)
+        .await
+        .unwrap();
 
     // Both should be new
     assert!(matches!(action1, NextAction::StartProcessing));
@@ -183,7 +206,9 @@ async fn same_key_different_operations_dont_interfere() {
     let key = IdempotencyKey::try_from("shared-key".to_string()).unwrap();
 
     // anonymous op first
-    let (action1, tx1) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION).await.unwrap();
+    let (action1, tx1) = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION)
+        .await
+        .unwrap();
     assert!(matches!(action1, NextAction::StartProcessing));
     let response1 = HttpResponse::Accepted().body("contact ok");
     save_response(tx1.unwrap(), &key, None, ANONYMOUS_OPERATION, response1)
@@ -191,7 +216,9 @@ async fn same_key_different_operations_dont_interfere() {
         .expect("Failed to save first response");
 
     // same key different op, shouldn't conflict
-    let (action2, tx2) = try_processing(&app.db_pool, &key, None, AUTHORIZED_OPERATION).await.unwrap();
+    let (action2, tx2) = try_processing(&app.db_pool, &key, None, AUTHORIZED_OPERATION)
+        .await
+        .unwrap();
     assert!(
         matches!(action2, NextAction::StartProcessing),
         "Same key under a different operation should start fresh"

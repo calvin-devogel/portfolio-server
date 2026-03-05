@@ -28,7 +28,6 @@ async fn articles_are_returned_when_they_exist() {
     let post_response = app.post_article(&article).await;
     assert_eq!(post_response.status().as_u16(), 202);
 
-
     let response = app.get_article("false", None).await;
     let response_body = response.text().await.unwrap();
     assert!(response_body.contains("fake post content"));
@@ -55,7 +54,7 @@ async fn articles_can_be_filtered_on_published() {
 
     let post_response = app.post_article(&article_published).await;
     assert_eq!(post_response.status().as_u16(), 202);
-        let post_response = app.post_article(&article_unpublished).await;
+    let post_response = app.post_article(&article_unpublished).await;
     assert_eq!(post_response.status().as_u16(), 202);
 
     let article_response: GetResponse = app
@@ -106,7 +105,9 @@ async fn blogs_can_be_filtered_on_slug() {
     let post_response = app.post_article(&article_unpublished).await;
     assert_eq!(post_response.status().as_u16(), 202);
 
-    let response = app.get_article("false", Some("do-not-publish".to_string())).await;
+    let response = app
+        .get_article("false", Some("do-not-publish".to_string()))
+        .await;
     let get_response: GetResponse = response.json().await.expect("Failed to get response json");
 
     assert_eq!(get_response.data.len(), 1);

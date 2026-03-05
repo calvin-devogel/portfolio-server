@@ -57,7 +57,7 @@ pub async fn try_processing(
         let saved_response = get_saved_response(pool, idempotency_key, user_id, operation).await?;
         match saved_response {
             Some(response) => Ok((NextAction::ReturnSavedResponse(response), None)),
-            None => Err(IdempotencyError::RequestInFlight)
+            None => Err(IdempotencyError::RequestInFlight),
         }
     }
 }
