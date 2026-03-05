@@ -9,6 +9,7 @@ pub struct TypedSession(Session);
 #[allow(clippy::missing_errors_doc)]
 impl TypedSession {
     const USER_ID_KEY: &'static str = "user_id";
+    const MFA_PENDING_KEY: &'static str = "mfa_pending_user_id";
 
     pub fn renew(&self) {
         self.0.renew();
@@ -20,6 +21,18 @@ impl TypedSession {
 
     pub fn get_user_id(&self) -> Result<Option<Uuid>, SessionGetError> {
         self.0.get(Self::USER_ID_KEY)
+    }
+
+    pub fn insert_mfa_pending_user_id(&self, user_id: Uuid) -> Result<(), SessionInsertError> {
+        self.0.insert(Self::MFA_PENDING_KEY, user_id)
+    }
+
+    pub fn get_mfa_pending_user_id(&self) -> Result<Option<Uuid>, SessionGetError> {
+        self.0.get(Self::MFA_PENDING_KEY)
+    }
+
+    pub fn clear_mfa_pending(&self) {
+        self.0.remove(Self::MFA_PENDING_KEY);
     }
 
     pub fn log_out(self) {

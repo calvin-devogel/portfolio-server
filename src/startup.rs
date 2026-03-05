@@ -23,19 +23,7 @@ use crate::{
     authentication::reject_anonymous_users,
     configuration::{ CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
-        check_auth,
-        delete_article,
-        get_articles,
-        edit_article,
-        publish_article,
-        get_messages,
-        health_check,
-        insert_article,
-        login,
-        logout,
-        patch_message,
-        post_message,
-        root,
+        check_auth, delete_article, edit_article, get_articles, get_messages, health_check, insert_article, login, logout, patch_message, post_message, publish_article, root, verify_totp
     }
 };
 
@@ -164,6 +152,7 @@ async fn run(
                             .max_age(util_config.cors.max_age)
                     })
                     .route("/login", web::post().to(login))
+                    .route("/verify_totp", web::post().to(verify_totp))
                     .route("/logout", web::post().to(logout))
                     .route("/check_auth", web::get().to(check_auth))
                     .route("/contact", web::post().to(post_message))

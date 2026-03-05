@@ -8,6 +8,7 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
 use uuid::Uuid;
+use totp_rs::{TOTP, Secret};
 
 use portfolio_server::{
     configuration::{DatabaseSettings, get_configuration},
@@ -124,6 +125,32 @@ impl TestUser {
         .execute(pool)
         .await
         .expect("Failed to store test user.");
+    }
+
+    pub async fn enable_totp(&self, pool: &PgPool) -> TOTP {
+        const SECRET_B32: &str = "JBSWY3DPEHPK3PXP";
+        sqlx::query!(
+            "UPDATE users SET totp_secret = $1, totp_enabled = TRUE WHERE user_id = $2",
+            SECRET_B32,
+            self.user_id,
+        )
+        .execute(pool)
+        .await
+        .expect("Failed to enable TOTP for test user");
+
+        TOTP::new(
+            totp_rs::Algorithm::SHA1,
+            6,
+            1,
+            30,
+            Secret::Encoded(SECRET_B32.to_string())
+                .to_bytes()
+                .expect("Invalid test secret"),
+            None,
+            "test".to_string(),
+        )
+        .expect("Failed to biuld test TOTP")
+
     }
 }
 
@@ -288,6 +315,15 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to delete article")
+    }
+
+    pub async fn post_verify_totp(&self, code: &str) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/api/verify_totp", &self.address))
+            .json(&serde_json::json!({ "code": code }))
+            .send()
+            .await
+            .expect("Failed to execute request.")
     }
 }
 
