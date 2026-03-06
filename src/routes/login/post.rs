@@ -31,14 +31,22 @@ pub async fn login(
     tracing::Span::current().record("username", tracing::field::display(&credentials.username));
 
     match validate_credentials(credentials, &pool).await {
-        Ok(user_id) => {
+        Ok((user_id, totp_enabled)) => {
             tracing::Span::current().record("user_id", tracing::field::display(&user_id));
             session.renew();
-            session
-                .insert_user_id(user_id)
-                .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
 
-            Ok(HttpResponse::Ok().finish())
+            if totp_enabled {
+                session
+                    .insert_mfa_pending_user_id(user_id)
+                    .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
+
+                Ok(HttpResponse::Accepted().json(serde_json::json!({ "mfa_required": true })))
+            } else {
+                session
+                    .insert_user_id(user_id)
+                    .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
+                Ok(HttpResponse::Ok().finish())
+            }
         }
         Err(e) => {
             let e = match e {

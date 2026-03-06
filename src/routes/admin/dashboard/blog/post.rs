@@ -4,8 +4,9 @@ use uuid::Uuid;
 
 use crate::{
     authentication::UserId,
-    errors::BlogError, idempotency::execute_idempotent,
-    types::article::{ArticleForm, ArticleId, ArticleResponse}
+    errors::BlogError,
+    idempotency::execute_idempotent,
+    types::article::{ArticleForm, ArticleId, ArticleResponse},
 };
 
 #[tracing::instrument(
@@ -39,11 +40,9 @@ async fn process_new_article(
 ) -> Result<HttpResponse, actix_web::Error> {
     let post_id = ArticleId(Uuid::new_v4());
     let slug = get_article_slug(&article.title);
-    let sections_json = article
-        .sections_as_json()
-        .map_err(|e|
-            BlogError::UnexpectedError(anyhow::anyhow!("Failed to serialize sections: {e:?}")
-        ))?;
+    let sections_json = article.sections_as_json().map_err(|e| {
+        BlogError::UnexpectedError(anyhow::anyhow!("Failed to serialize sections: {e:?}"))
+    })?;
     tracing::Span::current().record("post_id", tracing::field::display(&post_id));
 
     let insert_result = sqlx::query!(

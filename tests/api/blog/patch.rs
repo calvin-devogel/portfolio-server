@@ -1,4 +1,6 @@
-use crate::helpers::{ArticleRecord, ArticleSection, EditRequest, GetResponse, PublishRequest, spawn_app};
+use crate::helpers::{
+    ArticleRecord, ArticleSection, EditRequest, GetResponse, PublishRequest, spawn_app,
+};
 
 #[tokio::test]
 async fn authorized_user_can_publish_articles() {
@@ -95,7 +97,7 @@ async fn can_edit_articles() {
             "content": "edited post content"
         })]),
         excerpt: None,
-        author: None
+        author: None,
     };
 
     let response = app.edit_article(&edited_content).await;

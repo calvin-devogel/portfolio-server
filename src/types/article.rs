@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
 use std::ops::Deref;
+use uuid::Uuid;
 
 use crate::errors::BlogError;
 
@@ -17,8 +17,13 @@ pub struct CarouselImage {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ArticleSection {
-    Markdown { content: String },
-    Carousel { label: String, slides: Vec<CarouselImage> },
+    Markdown {
+        content: String,
+    },
+    Carousel {
+        label: String,
+        slides: Vec<CarouselImage>,
+    },
 }
 
 #[derive(serde::Serialize)]
@@ -78,15 +83,15 @@ impl TryFrom<ArticleRecordRaw> for ArticleRecord {
 
     fn try_from(raw: ArticleRecordRaw) -> Result<Self, Self::Error> {
         ArticleRecord::try_from_row(
-            raw.post_id, 
-            raw.title, 
-            raw.slug, 
-            raw.excerpt, 
-            raw.sections, 
-            raw.author, 
-            raw.published, 
-            raw.created_at, 
-            raw.updated_at
+            raw.post_id,
+            raw.title,
+            raw.slug,
+            raw.excerpt,
+            raw.sections,
+            raw.author,
+            raw.published,
+            raw.created_at,
+            raw.updated_at,
         )
     }
 }
@@ -135,9 +140,11 @@ impl ArticleForm {
             ("excerpt", &self.excerpt),
             ("author", &self.author),
         ];
-        for (_name,value) in fields {
+        for (_name, value) in fields {
             if value.trim().is_empty() {
-                return Err(BlogError::ValidationError("Failed to validate form content".into()));
+                return Err(BlogError::ValidationError(
+                    "Failed to validate form content".into(),
+                ));
             }
         }
         if self.sections.is_empty() {

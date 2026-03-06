@@ -1,18 +1,13 @@
 // start easy, just update published flag
 use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{
-    PgPool,
-    Postgres,
-    Transaction,
-    QueryBuilder,
-};
+use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 
 use crate::{
     authentication::UserId,
     // ArticleError?
     errors::BlogError,
     idempotency::execute_idempotent,
-    types::article::{ArticlePublishRequest, ArticleEditRequest},
+    types::article::{ArticleEditRequest, ArticlePublishRequest},
 };
 
 #[tracing::instrument(name = "Edit blog post", skip_all)]
@@ -65,9 +60,14 @@ async fn process_edit_article(
     builder.push(", updated_at = NOW() WHERE post_id = ");
     builder.push_bind(post_id);
 
-    if builder.sql().contains(r#"UPDATE blog_posts SET , updated_at = NOW() WHERE post_id = "#) {
+    if builder
+        .sql()
+        .contains(r#"UPDATE blog_posts SET , updated_at = NOW() WHERE post_id = "#)
+    {
         tracing::warn!("No fields to update for post {}", post_id);
-        return Err(BlogError::UnexpectedError(anyhow::anyhow!("No fields provided to update")).into())
+        return Err(
+            BlogError::UnexpectedError(anyhow::anyhow!("No fields provided to update")).into(),
+        );
     }
 
     let result = builder

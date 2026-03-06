@@ -21,22 +21,12 @@ use tracing_actix_web::TracingLogger;
 
 use crate::{
     authentication::reject_anonymous_users,
-    configuration::{ CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
+    configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
-        check_auth,
-        delete_article,
-        get_articles,
-        edit_article,
-        publish_article,
-        get_messages,
-        health_check,
-        insert_article,
-        login,
-        logout,
-        patch_message,
-        post_message,
-        root,
-    }
+        check_auth, delete_article, edit_article, get_articles, get_messages, health_check,
+        insert_article, login, logout, patch_message, post_message, publish_article, root,
+        totp_confirm, totp_disable, totp_setup, totp_status, verify_totp,
+    },
 };
 
 #[derive(serde::Deserialize, Clone)]
@@ -85,7 +75,7 @@ impl Application {
             configuration.application.base_url,
             configuration.application.hmac_secret,
             configuration.redis_uri,
-            util_config
+            util_config,
         )
         .await?;
 
@@ -103,7 +93,6 @@ impl Application {
         self.server.await
     }
 }
-
 
 // run the actual server
 #[allow(clippy::missing_errors_doc)]
@@ -164,6 +153,7 @@ async fn run(
                             .max_age(util_config.cors.max_age)
                     })
                     .route("/login", web::post().to(login))
+                    .route("/verify_totp", web::post().to(verify_totp))
                     .route("/logout", web::post().to(logout))
                     .route("/check_auth", web::get().to(check_auth))
                     .route("/contact", web::post().to(post_message))
@@ -195,6 +185,10 @@ async fn run(
                             .route("/blog/publish", web::patch().to(publish_article))
                             .route("/blog/delete", web::delete().to(delete_article))
                             .route("/blog/edit", web::patch().to(edit_article))
+                            .route("/totp/setup", web::get().to(totp_setup))
+                            .route("/totp/confirm", web::post().to(totp_confirm))
+                            .route("/totp/disable", web::post().to(totp_disable))
+                            .route("/totp/status", web::get().to(totp_status)),
                     ),
             )
             .app_data(db_pool.clone())

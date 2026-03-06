@@ -18,10 +18,10 @@ pub struct Credentials {
 async fn get_stored_credentials(
     username: &str,
     pool: &PgPool,
-) -> Result<Option<(uuid::Uuid, SecretString)>, anyhow::Error> {
+) -> Result<Option<(uuid::Uuid, SecretString, bool)>, anyhow::Error> {
     let row = sqlx::query!(
         r#"
-        SELECT user_id, password_hash
+        SELECT user_id, password_hash, totp_enabled
         FROM users
         WHERE username = $1
         "#,
@@ -30,7 +30,13 @@ async fn get_stored_credentials(
     .fetch_optional(pool)
     .await
     .context("Failed to perform a query to retrieve stored credentials.")?
-    .map(|row| (row.user_id, SecretString::new(Box::from(row.password_hash))));
+    .map(|row| {
+        (
+            row.user_id,
+            SecretString::new(row.password_hash.into()),
+            row.totp_enabled,
+        )
+    });
     Ok(row)
 }
 
@@ -41,23 +47,26 @@ async fn get_stored_credentials(
 pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
-) -> Result<uuid::Uuid, AuthError> {
+) -> Result<(uuid::Uuid, bool), AuthError> {
     let mut user_id = None;
+    let mut totp_enabled = false;
     // this is a made-up hash to prevent timing attacks
     // thanks clippy what the fuck is this?
-    let expected_password_hash = if let Some((stored_user_id, stored_password_hash)) =
-        get_stored_credentials(&credentials.username, pool).await?
-    {
-        user_id = Some(stored_user_id);
-        stored_password_hash
-    } else {
-        SecretString::new(
-            "$argon2id$v=19$m=15000,t=2,p=1$\
+    let expected_password_hash =
+        if let Some((stored_user_id, stored_password_hash, stored_totp_enabled)) =
+            get_stored_credentials(&credentials.username, pool).await?
+        {
+            user_id = Some(stored_user_id);
+            totp_enabled = stored_totp_enabled;
+            stored_password_hash
+        } else {
+            SecretString::new(
+                "$argon2id$v=19$m=19456,t=2,p=1$\
                 gZiV/M1gPc22ElAH/Jh1Hw$\
                 CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
-                .into(),
-        )
-    };
+                    .into(),
+            )
+        };
 
     spawn_blocking_with_tracing(move || {
         verify_password_hash(&expected_password_hash, &credentials.password)
@@ -71,6 +80,7 @@ pub async fn validate_credentials(
     user_id
         .ok_or_else(|| anyhow::anyhow!("Unknown username."))
         .map_err(AuthError::InvalidCredentials)
+        .map(|id| (id, totp_enabled))
 }
 
 #[tracing::instrument(
@@ -95,7 +105,7 @@ fn verify_password_hash(
 
 #[tracing::instrument(name = "Change password", skip(password, pool))]
 /// # Errors
-/// errors from anywheere in this function are handled by `anyhow` and passed up the pipeline
+/// errors from anywhere in this function are handled by `anyhow` and passed up the pipeline
 pub async fn change_password(
     user_id: uuid::Uuid,
     password: SecretString,
@@ -125,7 +135,7 @@ fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow
     let password_hash = Argon2::new(
         Algorithm::Argon2id,
         Version::V0x13,
-        Params::new(15000, 2, 1, None).unwrap(),
+        Params::new(19456, 2, 1, None).unwrap(),
     )
     .hash_password(password.expose_secret().as_bytes(), &salt)?
     .to_string();

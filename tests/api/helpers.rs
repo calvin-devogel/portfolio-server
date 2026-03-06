@@ -7,6 +7,7 @@ use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use std::sync::LazyLock;
+use totp_rs::{Secret, TOTP};
 use uuid::Uuid;
 
 use portfolio_server::{
@@ -39,8 +40,13 @@ pub struct CarouselImage {
 #[derive(serde::Deserialize, serde::Serialize, Clone, Debug, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ArticleSection {
-    Markdown { content: String },
-    Carousel { label: String, slides: Vec<CarouselImage> },
+    Markdown {
+        content: String,
+    },
+    Carousel {
+        label: String,
+        slides: Vec<CarouselImage>,
+    },
 }
 
 #[derive(serde::Deserialize, Debug)]
@@ -61,13 +67,11 @@ pub struct ArticleRecord {
     pub updated_at: DateTime<Utc>,
 }
 
-
 #[derive(serde::Serialize)]
 pub struct PublishRequest {
     pub post_id: Uuid,
     pub published: bool,
 }
-
 
 #[derive(serde::Serialize)]
 pub struct EditRequest {
@@ -124,6 +128,31 @@ impl TestUser {
         .execute(pool)
         .await
         .expect("Failed to store test user.");
+    }
+
+    pub async fn enable_totp(&self, pool: &PgPool) -> TOTP {
+        const SECRET_B32: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PX";
+        sqlx::query!(
+            "UPDATE users SET totp_secret = $1, totp_enabled = TRUE WHERE user_id = $2",
+            SECRET_B32,
+            self.user_id,
+        )
+        .execute(pool)
+        .await
+        .expect("Failed to enable TOTP for test user");
+
+        TOTP::new(
+            totp_rs::Algorithm::SHA1,
+            6,
+            1,
+            30,
+            Secret::Encoded(SECRET_B32.to_string())
+                .to_bytes()
+                .expect("Invalid test secret"),
+            None,
+            "test".to_string(),
+        )
+        .expect("Failed to build test TOTP")
     }
 }
 
@@ -228,8 +257,13 @@ impl TestApp {
         // horrible, just horrible
         header_map.insert("BlogPost-Page", "1".parse().unwrap());
         header_map.insert("BlogPost-Page-Size", "20".parse().unwrap());
-        header_map.insert("BlogPost-On-Published", on_published.parse().unwrap_or("false".parse().unwrap()));
-        if slug.is_some() { header_map.insert("BlogPost-Slug", slug.unwrap().parse().unwrap()); }
+        header_map.insert(
+            "BlogPost-On-Published",
+            on_published.parse().unwrap_or("false".parse().unwrap()),
+        );
+        if slug.is_some() {
+            header_map.insert("BlogPost-Slug", slug.unwrap().parse().unwrap());
+        }
         self.api_client
             .get(&format!("{}/api/blog", &self.address))
             .headers(header_map)
@@ -288,6 +322,41 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to delete article")
+    }
+
+    pub async fn post_verify_totp(&self, code: &str) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/api/verify_totp", &self.address))
+            .json(&serde_json::json!({ "code": code }))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn get_totp_setup(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/api/admin/totp/setup", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn post_totp_confirm(&self, code: &str) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/api/admin/totp/confirm", &self.address))
+            .json(&serde_json::json!({ "code": code }))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn post_totp_disable(&self, password: &str) -> reqwest::Response {
+        self.api_client
+            .post(&format!("{}/api/admin/totp/disable", &self.address))
+            .json(&serde_json::json!({ "password": password }))
+            .send()
+            .await
+            .expect("Failed to execute request.")
     }
 }
 
