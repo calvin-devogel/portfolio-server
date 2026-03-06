@@ -188,7 +188,7 @@ async fn run(
                             .route("/totp/setup", web::get().to(totp_setup))
                             .route("/totp/confirm", web::post().to(totp_confirm))
                             .route("/totp/disable", web::post().to(totp_disable))
-                            .route("/totp_status", web::get().to(totp_status)),
+                            .route("/totp/status", web::get().to(totp_status)),
                     ),
             )
             .app_data(db_pool.clone())
