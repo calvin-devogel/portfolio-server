@@ -4,6 +4,8 @@ use actix_web::{
     dev::{ServiceRequest, ServiceResponse},
     error::InternalError,
     middleware::Next,
+    cookie::{Cookie, SameSite},
+    http::Method,
 };
 use std::ops::Deref;
 use uuid::Uuid;
@@ -49,4 +51,51 @@ pub async fn reject_anonymous_users(
         let e = anyhow::anyhow!("The user has not logged in");
         Err(InternalError::from_response(e, response).into())
     }
+}
+
+const XSRF_COOKIE_NAME: &str = "XSRF-TOKEN";
+const XSRF_HEADER_NAME: &str = "X-XSRF-TOKEN";
+
+#[allow(clippy::future_not_send)]
+pub async fn cross_site_request_forgery_protection(
+    request: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    let is_safe = matches!(request.method(), &Method::GET | &Method::HEAD | &Method::OPTIONS);
+
+    if !is_safe {
+        let cookie_val = request.cookie(XSRF_COOKIE_NAME).map(|c| c.value().to_string());
+        let header_val = request
+            .headers()
+            .get(XSRF_HEADER_NAME)
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        match (cookie_val, header_val) {
+            (Some(c), Some(h)) if !c.is_empty() && c == h => {}
+            _ => return Err(actix_web::error::ErrorForbidden("Invalid CSRF token")),
+        }
+    }
+
+    // reuse the existing token
+    // only generate fresh if absent
+    let token = request
+        .cookie(XSRF_COOKIE_NAME)
+        .map(|c| c.value().to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+    let mut res = next.call(request).await?;
+
+    // NOT http_only intentionally, Angular must be able to read this
+    let cookie = Cookie::build(XSRF_COOKIE_NAME, token)
+        .path("/")
+        .secure(true)
+        .same_site(SameSite::Strict)
+        .finish();
+
+    res.response_mut()
+        .add_cookie(&cookie)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
+
+    Ok(res)
 }

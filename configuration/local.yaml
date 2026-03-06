@@ -13,6 +13,9 @@ rate_limit:
   login:
     max_requests: 3
     window_secs: 1
+  totp:
+    max_requests: 5
+    window_secs: 60
   message:
     max_messages: 3
     window_minutes: 1
