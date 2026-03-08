@@ -51,6 +51,7 @@ pub struct ApplicationSettings {
     pub host: String,
     pub base_url: String,
     pub hmac_secret: SecretString,
+    pub totp_encryption_key: SecretString,
 }
 
 #[derive(serde::Deserialize, Clone)]

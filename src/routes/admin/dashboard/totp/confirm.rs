@@ -11,7 +11,7 @@ pub struct ConfirmTotpRequest {
     code: String,
 }
 
-#[tracing::instrument(name = "TOTP confirm", skip(pool, user_id))]
+#[tracing::instrument(name = "TOTP confirm", skip(pool, user_id, request))]
 pub async fn totp_confirm(
     request: web::Json<ConfirmTotpRequest>,
     pool: web::Data<PgPool>,

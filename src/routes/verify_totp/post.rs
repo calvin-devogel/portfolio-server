@@ -1,4 +1,4 @@
-// read mfa_pendin_user_id from session
+// read mfa_pending_user_id from session
 // load totp_secret
 // use totp-rs to verify (+/- 1 window for clock slew)
 // if valid: session.clear_mfa_pending(); session.insert_user_id(user_id); return 200 (plus?)
@@ -19,7 +19,7 @@ pub struct VerifyTotpRequest {
 }
 
 #[allow(clippy::future_not_send)]
-#[tracing::instrument(name = "Verify TOTP code", skip(pool, session, limiter))]
+#[tracing::instrument(name = "Verify TOTP code", skip(pool, session, limiter, request))]
 pub async fn verify_totp(
     request: web::Json<VerifyTotpRequest>,
     pool: web::Data<PgPool>,
@@ -53,7 +53,7 @@ pub async fn verify_totp(
         30,
         Secret::Encoded(totp_secret).to_bytes().map_err(e500)?,
         None,
-        user_id.into(),
+        user_id.to_string(),
     )
     .map_err(e500)?;
 

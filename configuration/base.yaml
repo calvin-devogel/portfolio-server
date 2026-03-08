@@ -2,6 +2,8 @@ application:
   port: 8000
   # this is not a real secret, the actual key is provided via an environment variable in production
   hmac_secret: "long-and-very-secret-random-key-needed-to-verify-message-integrity"
+  # also a fake secret, provided at runtime
+  totp_encryption_key: "long-and-very-secret-random-key-needed-to-protect-totp-secrets"
 database:
   host: "localhost"
   port: 5432

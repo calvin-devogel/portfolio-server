@@ -4,7 +4,7 @@ use sqlx::PgPool;
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::authentication::UserId;
-use crate::utils::e500;
+use crate::utils::{e500, encrypt_totp_secret};
 
 #[tracing::instrument(name = "TOTP setup", skip(pool, user_id))]
 pub async fn totp_setup(
@@ -16,6 +16,19 @@ pub async fn totp_setup(
     // generate a secret and encode
     let secret = Secret::generate_secret();
     let secret_b32 = secret.to_encoded().to_string();
+
+    let status = sqlx::query!(
+        "SELECT totp_enabled FROM users WHERE user_id = $1",
+        *user_id
+    )
+    .fetch_one(pool.as_ref())
+    .await
+    .context("Failed to get totp status")
+    .map_err(e500)?;
+
+    if status.totp_enabled {
+        return Ok(HttpResponse::Conflict().finish())
+    }
 
     sqlx::query!(
         "UPDATE users SET totp_secret = $1 WHERE user_id = $2",

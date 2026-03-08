@@ -45,6 +45,7 @@ pub async fn login(
             session.renew();
 
             if totp_enabled {
+                session.clear_user_id();
                 session
                     .insert_mfa_pending_user_id(user_id)
                     .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
