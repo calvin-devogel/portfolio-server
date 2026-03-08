@@ -36,6 +36,9 @@ struct UtilConfig {
 #[derive(Clone)]
 pub struct HmacSecret(pub SecretString);
 
+#[derive(Clone)]
+pub struct TotpEncryptionKey(pub [u8; 32]);
+
 // wrapper for application url
 pub struct ApplicationBaseUrl(pub String);
 
@@ -63,6 +66,11 @@ impl Application {
             ttl: configuration.ttl,
         };
 
+        let raw_totp_key = configuration.application.totp_encryption_key.expose_secret().as_bytes();
+        let key: [u8; 32] = raw_totp_key.try_into()
+            .map_err(|_| anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes"))?;
+        let totp_key = TotpEncryptionKey(key);
+
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
         let server = run(
@@ -70,6 +78,7 @@ impl Application {
             connection_pool,
             configuration.application.base_url,
             configuration.application.hmac_secret,
+            totp_key,
             configuration.redis_uri,
             util_config,
         )
@@ -97,6 +106,7 @@ async fn run(
     db_pool: PgPool,
     base_url: String,
     hmac_secret: SecretString,
+    totp_encryption_key: TotpEncryptionKey,
     redis_uri: SecretString,
     util_config: UtilConfig,
 ) -> Result<Server, anyhow::Error> {
@@ -216,6 +226,7 @@ async fn run(
             .app_data(Data::new(util_config.rate.message.clone()))
             .app_data(Data::new(LoginLimiter(login_limiter.clone())))
             .app_data(Data::new(TotpLimiter(totp_limiter.clone())))
+            .app_data(Data::new(totp_encryption_key.clone()))
     })
     .listen(listener)?
     .run();

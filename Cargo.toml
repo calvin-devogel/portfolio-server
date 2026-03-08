@@ -58,4 +58,4 @@ uuid = { version = "1.22", features = ["v4", "serde"] }
 email_address = "0.2.9"
 serde_json = "1.0.61"
 totp-rs = { version = "5.7", features = ["gen_secret", "qr", "serde_support", "zeroize"] }
-aws-lc-rs = "1.16"
+aes-gcm = "0.10"
