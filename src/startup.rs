@@ -6,13 +6,7 @@ use actix_session::{
     storage::RedisSessionStore,
 };
 use actix_web::{
-    App, HttpServer,
-    cookie::{Key, SameSite},
-    dev::Server,
-    http,
-    middleware::from_fn,
-    web,
-    web::Data,
+    App, HttpResponse, HttpServer, cookie::{Key, SameSite}, dev::Server, http, middleware::from_fn, web::{self, Data}
 };
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
@@ -174,6 +168,17 @@ async fn run(
                     .route("/blog", web::get().to(get_articles))
                     .service(
                         web::scope("/admin")
+                            .app_data(
+                                web::JsonConfig::default()
+                                    .limit(65_536)
+                                    .error_handler(|err, _req| {
+                                        actix_web::error::InternalError::from_response(
+                                            err, 
+                                            HttpResponse::PayloadTooLarge().finish(),
+                                        )
+                                        .into()
+                                    }),
+                            )
                             .wrap({
                                 let mut cors = Cors::default();
 
