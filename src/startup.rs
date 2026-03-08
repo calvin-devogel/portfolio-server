@@ -1,27 +1,23 @@
 use actix_cors::Cors;
+use actix_limitation::Limiter;
 use actix_session::{
     SessionMiddleware,
     config::{PersistentSession, TtlExtensionPolicy},
     storage::RedisSessionStore,
 };
 use actix_web::{
-    App, HttpServer,
-    cookie::{Key, SameSite},
-    dev::Server,
-    http,
-    middleware::from_fn,
-    web,
-    web::Data,
+    App, HttpResponse, HttpServer, cookie::{Key, SameSite}, dev::Server, http, middleware::from_fn, web::{self, Data}
 };
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
+use std::time::Duration;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
-    authentication::reject_anonymous_users,
-    configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
+    authentication::{reject_anonymous_users, cross_site_request_forgery_protection},
+    configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings, TotpLimiter, LoginLimiter},
     routes::{
         check_auth, delete_article, edit_article, get_articles, get_messages, health_check,
         insert_article, login, logout, patch_message, post_message, publish_article, root,
@@ -112,6 +108,17 @@ async fn run(
         .build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
+    let login_limiter = Limiter::builder(redis_uri.expose_secret())
+        .limit(util_config.rate.login.max_requests)
+        .period(Duration::from_secs(util_config.rate.login.window_secs))
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build login rate limiter: {e}"))?;
+    let totp_limiter = Limiter::builder(redis_uri.expose_secret())
+        .limit(util_config.rate.totp.max_requests)
+        .period(Duration::from_secs(util_config.rate.totp.window_secs))
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build TOTP rate limiter: {e}"))?;
+
     let server = HttpServer::new(move || {
         App::new()
             .wrap(message_framework.clone())
@@ -134,6 +141,7 @@ async fn run(
             .route("/health_check", web::get().to(health_check))
             .service(
                 web::scope("/api")
+                    .wrap(from_fn(cross_site_request_forgery_protection))
                     .wrap({
                         let mut cors = Cors::default();
 
@@ -160,6 +168,17 @@ async fn run(
                     .route("/blog", web::get().to(get_articles))
                     .service(
                         web::scope("/admin")
+                            .app_data(
+                                web::JsonConfig::default()
+                                    .limit(65_536)
+                                    .error_handler(|err, _req| {
+                                        actix_web::error::InternalError::from_response(
+                                            err, 
+                                            HttpResponse::PayloadTooLarge().finish(),
+                                        )
+                                        .into()
+                                    }),
+                            )
                             .wrap({
                                 let mut cors = Cors::default();
 
@@ -195,6 +214,8 @@ async fn run(
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
             .app_data(Data::new(util_config.rate.message.clone()))
+            .app_data(Data::new(LoginLimiter(login_limiter.clone())))
+            .app_data(Data::new(TotpLimiter(totp_limiter.clone())))
     })
     .listen(listener)?
     .run();

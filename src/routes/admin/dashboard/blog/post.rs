@@ -89,7 +89,12 @@ async fn process_new_article(
 }
 
 fn get_article_slug(title: &str) -> String {
-    title.replace(' ', "-").to_ascii_lowercase()
+    title
+        .replace(' ', "-")
+        .chars()
+        .filter(|c| c.is_ascii_alphabetic() || *c == '-')
+        .collect::<String>()
+        .to_ascii_lowercase()
 }
 
 #[cfg(test)]
