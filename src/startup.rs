@@ -6,12 +6,7 @@ use actix_session::{
     storage::RedisSessionStore,
 };
 use actix_web::{
-    App, HttpResponse, HttpServer,
-    cookie::{Key, SameSite},
-    dev::Server,
-    http,
-    middleware::from_fn,
-    web::{self, Data},
+    App, HttpResponse, HttpServer, cookie::{Key, SameSite}, dev::Server, http, middleware::from_fn, web::{self, Data}
 };
 use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use secrecy::{ExposeSecret, SecretString};
@@ -21,11 +16,8 @@ use std::time::Duration;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
-    authentication::{cross_site_request_forgery_protection, reject_anonymous_users},
-    configuration::{
-        CorsSettings, DatabaseSettings, LoginLimiter, RateLimitSettings, Settings, TotpLimiter,
-        TtlSettings,
-    },
+    authentication::{reject_anonymous_users, cross_site_request_forgery_protection},
+    configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings, TotpLimiter, LoginLimiter},
     routes::{
         check_auth, delete_article, edit_article, get_articles, get_messages, health_check,
         insert_article, login, logout, patch_message, post_message, publish_article, root,
@@ -43,9 +35,6 @@ struct UtilConfig {
 // wrapper type for SecretString
 #[derive(Clone)]
 pub struct HmacSecret(pub SecretString);
-
-#[derive(Clone)]
-pub struct TotpEncryptionKey(pub [u8; 32]);
 
 // wrapper for application url
 pub struct ApplicationBaseUrl(pub String);
@@ -74,16 +63,6 @@ impl Application {
             ttl: configuration.ttl,
         };
 
-        let raw_totp_key = configuration
-            .application
-            .totp_encryption_key
-            .expose_secret()
-            .as_bytes();
-        let key: [u8; 32] = raw_totp_key
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes"))?;
-        let totp_key = TotpEncryptionKey(key);
-
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
         let server = run(
@@ -91,7 +70,6 @@ impl Application {
             connection_pool,
             configuration.application.base_url,
             configuration.application.hmac_secret,
-            totp_key,
             configuration.redis_uri,
             util_config,
         )
@@ -119,7 +97,6 @@ async fn run(
     db_pool: PgPool,
     base_url: String,
     hmac_secret: SecretString,
-    totp_encryption_key: TotpEncryptionKey,
     redis_uri: SecretString,
     util_config: UtilConfig,
 ) -> Result<Server, anyhow::Error> {
@@ -145,28 +122,26 @@ async fn run(
     let server = HttpServer::new(move || {
         App::new()
             .wrap(message_framework.clone())
+            .wrap(
+                SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
+                    .cookie_same_site(SameSite::Strict)
+                    .cookie_http_only(true)
+                    .cookie_secure(true)
+                    .session_lifecycle(
+                        PersistentSession::default()
+                            .session_ttl(actix_web::cookie::time::Duration::hours(
+                                util_config.ttl.ttl_hours,
+                            ))
+                            .session_ttl_extension_policy(TtlExtensionPolicy::OnEveryRequest),
+                    )
+                    .build(),
+            )
             .wrap(TracingLogger::default())
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
             .service(
                 web::scope("/api")
                     .wrap(from_fn(cross_site_request_forgery_protection))
-                    .wrap(
-                        SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
-                            .cookie_same_site(SameSite::Strict)
-                            .cookie_http_only(true)
-                            .cookie_secure(true)
-                            .session_lifecycle(
-                                PersistentSession::default()
-                                    .session_ttl(actix_web::cookie::time::Duration::hours(
-                                        util_config.ttl.ttl_hours,
-                                    ))
-                                    .session_ttl_extension_policy(
-                                        TtlExtensionPolicy::OnEveryRequest,
-                                    ),
-                            )
-                            .build(),
-                    )
                     .wrap({
                         let mut cors = Cors::default();
 
@@ -193,15 +168,17 @@ async fn run(
                     .route("/blog", web::get().to(get_articles))
                     .service(
                         web::scope("/admin")
-                            .app_data(web::JsonConfig::default().limit(65_536).error_handler(
-                                |err, _req| {
-                                    actix_web::error::InternalError::from_response(
-                                        err,
-                                        HttpResponse::PayloadTooLarge().finish(),
-                                    )
-                                    .into()
-                                },
-                            ))
+                            .app_data(
+                                web::JsonConfig::default()
+                                    .limit(65_536)
+                                    .error_handler(|err, _req| {
+                                        actix_web::error::InternalError::from_response(
+                                            err, 
+                                            HttpResponse::PayloadTooLarge().finish(),
+                                        )
+                                        .into()
+                                    }),
+                            )
                             .wrap({
                                 let mut cors = Cors::default();
 
@@ -239,7 +216,6 @@ async fn run(
             .app_data(Data::new(util_config.rate.message.clone()))
             .app_data(Data::new(LoginLimiter(login_limiter.clone())))
             .app_data(Data::new(TotpLimiter(totp_limiter.clone())))
-            .app_data(Data::new(totp_encryption_key.clone()))
     })
     .listen(listener)?
     .run();

@@ -84,7 +84,7 @@ async fn invalid_totp_code_does_not_invalidate_pending_session() {
     app.post_login(&app.test_user).await;
 
     // wrong code, session is pending
-    let bad_response = app.post_verify_totp("not-a-code").await;
+    let bad_response = app.post_verify_totp("000000").await;
     assert_eq!(bad_response.status().as_u16(), 401);
 
     // correct code: should work

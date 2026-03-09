@@ -13,7 +13,7 @@ use uuid::Uuid;
 use portfolio_server::{
     configuration::{DatabaseSettings, get_configuration},
     startup::{Application, get_connection_pool},
-    telemetry::{get_subscriber, init_subscriber}
+    telemetry::{get_subscriber, init_subscriber},
 };
 
 // ensure the `tracing` task is only initialized once using `LazyLock`
@@ -119,12 +119,11 @@ impl TestUser {
         .to_string();
 
         sqlx::query!(
-            "INSERT INTO users (user_id, username, password_hash, totp_enabled)
-            VALUES ($1, $2, $3, $4)",
+            "INSERT INTO users (user_id, username, password_hash)
+            VALUES ($1, $2, $3)",
             self.user_id,
             self.username,
             password_hash,
-            false
         )
         .execute(pool)
         .await
@@ -133,12 +132,9 @@ impl TestUser {
 
     pub async fn enable_totp(&self, pool: &PgPool) -> TOTP {
         const SECRET_B32: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PX";
-        const ENCRYPTION_KEY: &[u8; 32] = b"f2e4f32183efde11831c64557303bf22";
-        let encrypted = portfolio_server::crypto::encrypt(ENCRYPTION_KEY, SECRET_B32.as_bytes())
-            .expect("failed to encrypt TOTP secret");
         sqlx::query!(
             "UPDATE users SET totp_secret = $1, totp_enabled = TRUE WHERE user_id = $2",
-            encrypted,
+            SECRET_B32,
             self.user_id,
         )
         .execute(pool)
@@ -166,7 +162,6 @@ pub struct TestApp {
     pub _port: u16,
     pub test_user: TestUser,
     pub api_client: reqwest::Client,
-    pub xsrf_token: String,
 }
 
 impl TestApp {
@@ -176,7 +171,6 @@ impl TestApp {
     {
         self.api_client
             .post(&format!("{}/api/login", &self.address))
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .form(&body)
             .send()
             .await
@@ -186,7 +180,6 @@ impl TestApp {
     pub async fn post_logout(&self) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/api/logout", &self.address))
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .send()
             .await
             .expect("Failed to execute request.")
@@ -215,7 +208,6 @@ impl TestApp {
         self.api_client
             .post(&format!("{}/api/contact", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .form(&body)
             .send()
             .await
@@ -237,7 +229,6 @@ impl TestApp {
         self.api_client
             .patch(&format!("{}/api/admin/messages", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
             .send()
             .await
@@ -255,7 +246,6 @@ impl TestApp {
         self.api_client
             .patch(&format!("{}/api/admin/messages", &self.address))
             .header("Idempotency-Key", idempotency_key.to_string())
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
             .send()
             .await
@@ -289,7 +279,6 @@ impl TestApp {
         self.api_client
             .post(format!("{}/api/admin/blog/post", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
             .send()
             .await
@@ -303,7 +292,6 @@ impl TestApp {
         self.api_client
             .patch(format!("{}/api/admin/blog/publish", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
             .send()
             .await
@@ -317,7 +305,6 @@ impl TestApp {
         self.api_client
             .patch(format!("{}/api/admin/blog/edit", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
             .send()
             .await
@@ -331,7 +318,6 @@ impl TestApp {
         self.api_client
             .delete(format!("{}/api/admin/blog/delete", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
             .send()
             .await
@@ -341,7 +327,6 @@ impl TestApp {
     pub async fn post_verify_totp(&self, code: &str) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/api/verify_totp", &self.address))
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&serde_json::json!({ "code": code }))
             .send()
             .await
@@ -359,7 +344,6 @@ impl TestApp {
     pub async fn post_totp_confirm(&self, code: &str) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/api/admin/totp/confirm", &self.address))
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&serde_json::json!({ "code": code }))
             .send()
             .await
@@ -369,7 +353,6 @@ impl TestApp {
     pub async fn post_totp_disable(&self, password: &str) -> reqwest::Response {
         self.api_client
             .post(&format!("{}/api/admin/totp/disable", &self.address))
-            .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&serde_json::json!({ "password": password }))
             .send()
             .await
@@ -404,24 +387,12 @@ pub async fn spawn_app() -> TestApp {
         .build()
         .unwrap();
 
-    let seed = client
-        .get(format!("http://localhost:{}/api/blog", application_port))
-        .send()
-        .await
-        .expect("Failed to seed CSRF token");
-    let xsrf_token = seed
-        .cookies()
-        .find(|c| c.name() == "XSRF-TOKEN")
-        .map(|c| c.value().to_string())
-        .expect("XSRF-TOKEN not found in seed response");
-
     let test_app = TestApp {
         address: format!("http://localhost:{}", application_port),
         _port: application_port,
         db_pool: get_connection_pool(&configuration.database),
         test_user: TestUser::generate(),
         api_client: client,
-        xsrf_token,
     };
     test_app.test_user.store(&test_app.db_pool).await;
     test_app

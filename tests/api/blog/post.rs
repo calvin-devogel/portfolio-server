@@ -44,7 +44,7 @@ async fn blog_posts_with_bad_data_are_rejected() {
 
     let response = app.post_article(&blog_body).await;
     dbg!(&response.status().as_u16());
-    assert_eq!(response.status().as_u16(), 413);
+    assert_eq!(response.status().as_u16(), 400);
 
     let blog_body = serde_json::json!({
         "title": "Title",

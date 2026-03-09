@@ -35,10 +35,6 @@ impl TypedSession {
         self.0.remove(Self::MFA_PENDING_KEY);
     }
 
-    pub fn clear_user_id(&self) {
-        self.0.remove(Self::USER_ID_KEY);
-    }
-
     pub fn log_out(self) {
         self.0.purge();
     }

@@ -6,7 +6,7 @@
       {
         "ordinal": 0,
         "name": "totp_secret",
-        "type_info": "Bytea"
+        "type_info": "Text"
       }
     ],
     "parameters": {
