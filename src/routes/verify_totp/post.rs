@@ -1,4 +1,4 @@
-// read mfa_pendin_user_id from session
+// read mfa_pending_user_id from session
 // load totp_secret
 // use totp-rs to verify (+/- 1 window for clock slew)
 // if valid: session.clear_mfa_pending(); session.insert_user_id(user_id); return 200 (plus?)
@@ -10,6 +10,7 @@ use sqlx::PgPool;
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::session_state::TypedSession;
+use crate::startup::TotpEncryptionKey;
 use crate::utils::e500;
 use crate::configuration::TotpLimiter;
 
@@ -19,12 +20,13 @@ pub struct VerifyTotpRequest {
 }
 
 #[allow(clippy::future_not_send)]
-#[tracing::instrument(name = "Verify TOTP code", skip(pool, session, limiter))]
+#[tracing::instrument(name = "Verify TOTP code", skip(pool, session, limiter, request, encryption_key))]
 pub async fn verify_totp(
     request: web::Json<VerifyTotpRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
     limiter: web::Data<TotpLimiter>,
+    encryption_key: web::Data<TotpEncryptionKey>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = session
         .get_mfa_pending_user_id()
@@ -41,10 +43,14 @@ pub async fn verify_totp(
             _ => e500(anyhow::anyhow!("TOTP rate limiter error: {e}")),
         })?;
 
-    let totp_secret = get_totp_secret(user_id, &pool)
+    let encrypted = get_totp_secret(user_id, &pool)
         .await
         .map_err(e500)?
         .ok_or_else(|| actix_web::error::ErrorUnauthorized("TOTP not configured for user"))?;
+
+    let totp_secret = String::from_utf8(
+        crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?
+    ).map_err(e500)?;
 
     let totp = TOTP::new(
         Algorithm::SHA1,
@@ -53,7 +59,7 @@ pub async fn verify_totp(
         30,
         Secret::Encoded(totp_secret).to_bytes().map_err(e500)?,
         None,
-        user_id.into(),
+        user_id.to_string(),
     )
     .map_err(e500)?;
 
@@ -71,7 +77,7 @@ pub async fn verify_totp(
 async fn get_totp_secret(
     user_id: uuid::Uuid,
     pool: &PgPool,
-) -> Result<Option<String>, anyhow::Error> {
+) -> Result<Option<Vec<u8>>, anyhow::Error> {
     let row = sqlx::query!(
         r#"SELECT totp_secret FROM users WHERE user_id = $1"#,
         user_id

@@ -6,5 +6,5 @@ mod idempotency;
 mod login;
 mod logout;
 mod messages;
-mod verify_totp;
+mod totp;
 mod totp_admin;
