@@ -1,0 +1,3 @@
+ALTER TABLE users
+    ALTER COLUMN totp_secret TYPE BYTEA
+    USING NULL;

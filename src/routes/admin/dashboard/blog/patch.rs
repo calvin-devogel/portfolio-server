@@ -20,6 +20,8 @@ pub async fn edit_article(
     let article_to_edit = article_edit_request.into_inner();
     let user_id = Some(*user_id.into_inner());
 
+    article_to_edit.validate().map_err(actix_web::Error::from)?;
+
     execute_idempotent(&request, &pool, user_id, move |tx| {
         Box::pin(async move { process_edit_article(tx, article_to_edit).await })
     })

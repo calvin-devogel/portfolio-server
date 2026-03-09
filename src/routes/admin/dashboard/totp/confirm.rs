@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::authentication::UserId;
+use crate::startup::TotpEncryptionKey;
 use crate::utils::e500;
 
 #[derive(serde::Deserialize, Debug)]
@@ -11,11 +12,12 @@ pub struct ConfirmTotpRequest {
     code: String,
 }
 
-#[tracing::instrument(name = "TOTP confirm", skip(pool, user_id))]
+#[tracing::instrument(name = "TOTP confirm", skip(pool, user_id, request, encryption_key))]
 pub async fn totp_confirm(
     request: web::Json<ConfirmTotpRequest>,
     pool: web::Data<PgPool>,
     user_id: web::ReqData<UserId>,
+    encryption_key: web::Data<TotpEncryptionKey>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = user_id.into_inner();
 
@@ -32,9 +34,12 @@ pub async fn totp_confirm(
     if row.totp_enabled {
         return Ok(HttpResponse::Conflict().finish());
     }
-    let secret_b32 = row
-        .totp_secret
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progress"))?;
+
+    let encrypted = row.totp_secret
+        .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progres"))?;
+    let secret_b32 = String::from_utf8(
+        crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?
+    ).map_err(e500)?;
 
     let totp = TOTP::new(
         Algorithm::SHA1,
