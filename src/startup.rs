@@ -58,6 +58,7 @@ pub struct Application {
 impl Application {
     #[tracing::instrument(
         name = "Application::build",
+        level = "info",
         skip(configuration),
         fields(
             host = %configuration.application.host,
@@ -149,7 +150,7 @@ impl Application {
 }
 
 // run the actual server
-#[tracing::instrument(name = "Application::run", skip_all)]
+#[tracing::instrument(name = "Application::run", level = "info", skip_all)]
 #[allow(clippy::missing_errors_doc)]
 async fn run(
     listener: TcpListener,
