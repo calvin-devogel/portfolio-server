@@ -132,7 +132,16 @@ impl Application {
             configuration.redis_uri,
             util_config,
         )
-        .await?;
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                error.cause_chain = ?e,
+                error.message = %e,
+                "Server component initialization failed"
+            );
+            e
+        })?;
+        tracing::info!("Server components initialized successfully");
 
         Ok(Self { port, server })
     }
@@ -168,6 +177,7 @@ async fn run(
         .same_site(SameSite::Strict)
         .build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
+    tracing::info!("Connecting to Redis session store...");
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret())
         .await
         .map_err(|e| {
