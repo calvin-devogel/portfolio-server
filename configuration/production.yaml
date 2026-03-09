@@ -16,3 +16,4 @@ rate_limit:
   message:
     max_messages: 3
     window_minutes: 60
+redis_uri: "UNSET_CONFIGURE_VIA_APP_REDIS_URI"
