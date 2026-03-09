@@ -2403,6 +2403,7 @@ dependencies = [
  "config",
  "console-subscriber",
  "email_address",
+ "redis 0.32.7",
  "reqwest",
  "rustls 0.23.37",
  "secrecy",
