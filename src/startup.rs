@@ -177,7 +177,7 @@ async fn run(
         .same_site(SameSite::Strict)
         .build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
-    tracing::info!("Connecting to Redis session store...");
+    tracing::info!("Connecting to Redis session store at: {redis_uri:?}...");
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret())
         .await
         .map_err(|e| {
