@@ -11,11 +11,11 @@ ttl:
   idle_timeout_minutes: 1
 rate_limit:
   login:
-    max_requests: 3
+    max_requests: 10
     window_secs: 1
   totp:
     max_requests: 5
-    window_secs: 60
+    window_secs: 1
   message:
     max_messages: 3
     window_minutes: 1
