@@ -19,16 +19,7 @@ async fn main() -> anyhow::Result<()> {
     init_tracing();
 
     let configuration = get_configuration().expect("Failed to read configuration.");
-    let application = Application::build(configuration)
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                error.cause_chain = ?e,
-                error.message = %e,
-                "Application failed to build"
-            );
-            e
-        })?;
+    let application = Application::build(configuration).await?;
     let application_task = tokio::spawn(application.run_until_stopped());
 
     // put a tokio-select in here when you're ready

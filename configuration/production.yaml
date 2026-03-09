@@ -8,12 +8,11 @@ cors:
   max_age: 3600
 rate_limit:
   login:
-    max_requests: 10
-    window_secs: 1
+    max_requests: 3
+    window_secs: 10
   totp:
-    max_requests: 10
-    window_secs: 1
+    max_requests: 3
+    window_secs: 10
   message:
     max_messages: 3
     window_minutes: 60
-redis_uri: "UNSET_CONFIGURE_VIA_APP_REDIS_URI"

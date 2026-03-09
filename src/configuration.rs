@@ -1,6 +1,7 @@
 use secrecy::{ExposeSecret, SecretString};
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use actix_limitation::Limiter;
 
 pub enum Environment {
     Local,
@@ -55,10 +56,10 @@ pub struct ApplicationSettings {
 
 #[derive(serde::Deserialize, Clone)]
 pub struct RateLimitSettings {
-    // #[serde(default = "default_login_rate_limit")]
-    // pub login: LoginRateLimitSettings,
-    // #[serde(default = "default_totp_rate_limit")]
-    // pub totp: LoginRateLimitSettings,
+    #[serde(default = "default_login_rate_limit")]
+    pub login: LoginRateLimitSettings,
+    #[serde(default = "default_totp_rate_limit")]
+    pub totp: LoginRateLimitSettings,
     #[serde(default = "default_message_rate_limit")]
     pub message: MessageRateLimitSettings,
 }
@@ -66,8 +67,8 @@ pub struct RateLimitSettings {
 impl Default for RateLimitSettings {
     fn default() -> Self {
         Self {
-            // login: default_login_rate_limit(),
-            // totp: default_totp_rate_limit(),
+            login: default_login_rate_limit(),
+            totp: default_totp_rate_limit(),
             message: default_message_rate_limit(),
         }
     }
@@ -89,19 +90,19 @@ pub struct MessageRateLimitSettings {
     pub window_minutes: usize,
 }
 
-// const fn default_login_rate_limit() -> LoginRateLimitSettings {
-//     LoginRateLimitSettings {
-//         max_requests: 5,
-//         window_secs: 10,
-//     }
-// }
+const fn default_login_rate_limit() -> LoginRateLimitSettings {
+    LoginRateLimitSettings {
+        max_requests: 5,
+        window_secs: 10,
+    }
+}
 
-// const fn default_totp_rate_limit() -> LoginRateLimitSettings {
-//     LoginRateLimitSettings {
-//         max_requests: 5,
-//         window_secs: 60
-//     }
-// }
+const fn default_totp_rate_limit() -> LoginRateLimitSettings {
+    LoginRateLimitSettings {
+        max_requests: 5,
+        window_secs: 60
+    }
+}
 
 const fn default_message_rate_limit() -> MessageRateLimitSettings {
     MessageRateLimitSettings {
@@ -111,8 +112,8 @@ const fn default_message_rate_limit() -> MessageRateLimitSettings {
 }
 
 // login limits
-// pub struct LoginLimiter(pub Limiter);
-// pub struct TotpLimiter(pub Limiter);
+pub struct LoginLimiter(pub Limiter);
+pub struct TotpLimiter(pub Limiter);
 
 #[derive(serde::Deserialize, Clone)]
 pub struct DatabaseSettings {

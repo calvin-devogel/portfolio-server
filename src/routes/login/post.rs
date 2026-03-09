@@ -5,6 +5,7 @@ use sqlx::PgPool;
 use crate::authentication::{Credentials, validate_credentials};
 use crate::errors::AuthError;
 use crate::session_state::TypedSession;
+use crate::configuration::LoginLimiter;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct LoginRequest {
@@ -15,7 +16,7 @@ pub struct LoginRequest {
 #[allow(clippy::missing_errors_doc)]
 #[allow(clippy::future_not_send)]
 #[tracing::instrument(
-    skip(pool, session),
+    skip(pool, session, limiter),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
@@ -23,13 +24,13 @@ pub async fn login(
     request: web::Form<LoginRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
-    // limiter: web::Data<LoginLimiter>,
+    limiter: web::Data<LoginLimiter>,
 ) -> Result<HttpResponse, InternalError<AuthError>> {
-    // let ip = conn.realip_remote_addr().unwrap_or("unknown").to_string();
-    // limiter.0
-    //     .count(ip)
-    //     .await
-    //     .map_err(|_| login_error(AuthError::RateLimitExceeded))?;
+    let ip = conn.realip_remote_addr().unwrap_or("unknown").to_string();
+    limiter.0
+        .count(ip)
+        .await
+        .map_err(|_| login_error(AuthError::RateLimitExceeded))?;
     
     let credentials = Credentials {
         username: request.username.clone(),

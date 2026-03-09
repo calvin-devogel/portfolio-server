@@ -12,6 +12,7 @@ use totp_rs::{Algorithm, Secret, TOTP};
 use crate::session_state::TypedSession;
 use crate::startup::TotpEncryptionKey;
 use crate::utils::e500;
+use crate::configuration::TotpLimiter;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct VerifyTotpRequest {
@@ -19,12 +20,12 @@ pub struct VerifyTotpRequest {
 }
 
 #[allow(clippy::future_not_send)]
-#[tracing::instrument(name = "Verify TOTP code", skip(pool, session, request, encryption_key))]
+#[tracing::instrument(name = "Verify TOTP code", skip(pool, session, limiter, request, encryption_key))]
 pub async fn verify_totp(
     request: web::Json<VerifyTotpRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
-    // limiter: web::Data<TotpLimiter>,
+    limiter: web::Data<TotpLimiter>,
     encryption_key: web::Data<TotpEncryptionKey>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = session
@@ -32,15 +33,15 @@ pub async fn verify_totp(
         .map_err(e500)?
         .ok_or_else(|| actix_web::error::ErrorUnauthorized("No MFA session in progress"))?;
 
-    // limiter.0
-    //     .count(user_id.to_string())
-    //     .await
-    //     .map_err(|e| match e {
-    //         actix_limitation::Error::LimitExceeded(_) => {
-    //             actix_web::error::ErrorTooManyRequests("Too many TOTP attempts")
-    //         }
-    //         _ => e500(anyhow::anyhow!("TOTP rate limiter error: {e}")),
-    //     })?;
+    limiter.0
+        .count(user_id.to_string())
+        .await
+        .map_err(|e| match e {
+            actix_limitation::Error::LimitExceeded(_) => {
+                actix_web::error::ErrorTooManyRequests("Too many TOTP attempts")
+            }
+            _ => e500(anyhow::anyhow!("TOTP rate limiter error: {e}")),
+        })?;
 
     let encrypted = get_totp_secret(user_id, &pool)
         .await

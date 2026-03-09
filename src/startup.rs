@@ -1,4 +1,5 @@
 use actix_cors::Cors;
+use actix_limitation::Limiter;
 use actix_session::{
     SessionMiddleware,
     config::{PersistentSession, TtlExtensionPolicy},
@@ -16,12 +17,14 @@ use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageSto
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
+use std::time::Duration;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
     authentication::{cross_site_request_forgery_protection, reject_anonymous_users},
     configuration::{
-        CorsSettings, DatabaseSettings, Settings, TtlSettings, RateLimitSettings
+        CorsSettings, DatabaseSettings, LoginLimiter, RateLimitSettings, Settings, TotpLimiter,
+        TtlSettings,
     },
     routes::{
         check_auth, delete_article, edit_article, get_articles, get_messages, health_check,
@@ -53,33 +56,11 @@ pub struct Application {
 }
 
 impl Application {
-    #[tracing::instrument(
-        name = "Application::build",
-        level = "info",
-        skip(configuration),
-        fields(
-            host = %configuration.application.host,
-            port = %configuration.application.port,
-            db_host = %configuration.database.host,
-        )
-    )]
     #[allow(clippy::missing_errors_doc)]
     /// # Panics
     /// probably not a bad idea to handle port binding issues gracefully
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
-
-        tracing::info!("Database connection pool configured (lazy)");
-
-        connection_pool.acquire().await.map_err(|e| {
-            tracing::error!(
-                error.cause_chain = ?e,
-                error.message = %e,
-                "Failed to acquire initial database connection"
-            );
-            anyhow::anyhow!("Database connectivity check failed: {e}")
-        })?;
-        tracing::info!("Database connectivity verified");
 
         let address = format!(
             "{}:{}",
@@ -100,25 +81,10 @@ impl Application {
             .as_bytes();
         let key: [u8; 32] = raw_totp_key
             .try_into()
-            .map_err(|_| {
-                tracing::error!(
-                    key_len = raw_totp_key.len(),
-                    "totp_encryption_key is not exactly 32 bytes"
-                );
-                anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes")
-        })?;
+            .map_err(|_| anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes"))?;
         let totp_key = TotpEncryptionKey(key);
 
-        let listener = TcpListener::bind(&address).map_err(|e| {
-            tracing::error!(
-                address = %address,
-                error.cause_chain = ?e,
-                error.message = %e,
-                "Failed to bind TCP listener"
-            );
-            anyhow::Error::from(e)
-        })?;
-        tracing::info!(address = %address, "TCP listener bound");
+        let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
         let server = run(
             listener,
@@ -129,16 +95,7 @@ impl Application {
             configuration.redis_uri,
             util_config,
         )
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                error.cause_chain = ?e,
-                error.message = %e,
-                "Server component initialization failed"
-            );
-            e
-        })?;
-        tracing::info!("Server components initialized successfully");
+        .await?;
 
         Ok(Self { port, server })
     }
@@ -156,7 +113,6 @@ impl Application {
 }
 
 // run the actual server
-#[tracing::instrument(name = "Application::run", level = "info", skip_all)]
 #[allow(clippy::missing_errors_doc)]
 async fn run(
     listener: TcpListener,
@@ -174,46 +130,17 @@ async fn run(
         .same_site(SameSite::Strict)
         .build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
-    tracing::info!("Connecting to Redis session store...");
-    let redis_store = RedisSessionStore::new(redis_uri.expose_secret())
-        .await
-        .map_err(|e| {
-            tracing::error!(
-                error.cause_chain = ?e,
-                error.message = %e,
-                "Failed to connect to Redis session store"
-            );
-            anyhow::anyhow!("Redis session store connection failed: {e}")
-        })?;
-    tracing::info!("Redis session store connected");
-
-    // let login_limiter = Limiter::builder(redis_uri.expose_secret())
-    //     .limit(util_config.rate.login.max_requests)
-    //     .period(Duration::from_secs(util_config.rate.login.window_secs))
-    //     .build()
-    //     .map_err(|e| {
-    //         tracing::error!(
-    //             error.cause_chain = ?e,
-    //             error.message = %e,
-    //             "Failed to build login rate limiter"
-    //         );
-    //         anyhow::anyhow!("Failed to build login rate limiter: {e}")
-    //     })?;
-
-    // let totp_limiter = Limiter::builder(redis_uri.expose_secret())
-    //     .limit(util_config.rate.totp.max_requests)
-    //     .period(Duration::from_secs(util_config.rate.totp.window_secs))
-    //     .build()
-    //     .map_err(|e| {
-    //         tracing::error!(
-    //             error.cause_chain = ?e,
-    //             error.message = %e,
-    //             "Failed to build TOTP rate limiter"
-    //         );
-    //         anyhow::anyhow!("Failed to build TOTP rate limiter: {e}")
-    //     })?;
-    
-    // tracing::info!("Rate limiters configured");
+    let redis_store = RedisSessionStore::new(redis_uri.expose_secret()).await?;
+    let login_limiter = Limiter::builder(redis_uri.expose_secret())
+        .limit(util_config.rate.login.max_requests)
+        .period(Duration::from_secs(util_config.rate.login.window_secs))
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build login rate limiter: {e}"))?;
+    let totp_limiter = Limiter::builder(redis_uri.expose_secret())
+        .limit(util_config.rate.totp.max_requests)
+        .period(Duration::from_secs(util_config.rate.totp.window_secs))
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to build TOTP rate limiter: {e}"))?;
 
     let server = HttpServer::new(move || {
         App::new()
@@ -310,8 +237,8 @@ async fn run(
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
             .app_data(Data::new(util_config.rate.message.clone()))
-            // .app_data(Data::new(LoginLimiter(login_limiter.clone())))
-            // .app_data(Data::new(TotpLimiter(totp_limiter.clone())))
+            .app_data(Data::new(LoginLimiter(login_limiter.clone())))
+            .app_data(Data::new(TotpLimiter(totp_limiter.clone())))
             .app_data(Data::new(totp_encryption_key.clone()))
     })
     .listen(listener)?

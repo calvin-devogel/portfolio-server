@@ -20,6 +20,7 @@ console = ["console-subscriber"]
 [dependencies]
 console-subscriber = { version = "0.5", optional = true }
 actix-cors = "0.7"
+actix-limitation = { version = "0.5" }
 actix-session = { version = "0.11", features = ["redis-session-rustls"]}
 actix-web = { version = "4.13", features = ["rustls"] }
 actix-web-flash-messages = { version = "0.5", features = ["cookies"] }
