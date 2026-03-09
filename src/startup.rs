@@ -170,11 +170,6 @@ async fn run(
     redis_uri: SecretString,
     util_config: UtilConfig,
 ) -> Result<Server, anyhow::Error> {
-    tracing::info!(
-        redis_uri_env = std::env::var("APP_REDIS_URI").as_deref().unwrap_or("NOT SET"),
-        "Redis URI from environment"
-    );
-    
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
     let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
