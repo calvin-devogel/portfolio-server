@@ -97,7 +97,7 @@ impl TryFrom<ArticleRecordRaw> for ArticleRecord {
     type Error = serde_json::Error;
 
     fn try_from(raw: ArticleRecordRaw) -> Result<Self, Self::Error> {
-        ArticleRecord::try_from_row(
+        Self::try_from_row(
             raw.post_id,
             raw.title,
             raw.slug,

@@ -153,7 +153,7 @@ impl Application {
 
 // run the actual server
 #[tracing::instrument(name = "Application::run", level = "info", skip_all)]
-#[allow(clippy::missing_errors_doc)]
+#[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
 async fn run(
     listener: TcpListener,
     db_pool: PgPool,

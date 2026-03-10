@@ -40,13 +40,22 @@ async fn get_stored_credentials(
     Ok(row)
 }
 
-#[tracing::instrument("Validate credentials", skip(credentials, pool))]
-/// # Errors
-/// shoots off an `AuthError::InvalidCredentials` if the hash for the provided `credentials` cannot be verified
-/// or an `anyhow` error if the `username` doesn't exist in the database
 pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
+) -> Result<(uuid::Uuid, bool), AuthError> {
+    validate_credentials_with_verifier(credentials, pool, verify_password_hash).await
+}
+
+#[tracing::instrument("Validate credentials", skip(credentials, pool, verify_fn))]
+/// # Errors
+/// shoots off an `AuthError::InvalidCredentials` if the hash for the provided `credentials` cannot be verified
+/// or an `anyhow` error if the `username` doesn't exist in the database
+#[doc(hidden)]
+pub async fn validate_credentials_with_verifier(
+    credentials: Credentials,
+    pool: &PgPool,
+    verify_fn: impl FnOnce(&SecretString, &SecretString) -> Result<(), AuthError> + Send + 'static,
 ) -> Result<(uuid::Uuid, bool), AuthError> {
     let mut user_id = None;
     let mut totp_enabled = false;
@@ -68,17 +77,15 @@ pub async fn validate_credentials(
             )
         };
 
-    spawn_blocking_with_tracing(move || {
-        verify_password_hash(&expected_password_hash, &credentials.password)
-    })
-    .await
-    .context("Failed to spawn blocking task.")??;
+    spawn_blocking_with_tracing(move || verify_fn(&expected_password_hash, &credentials.password))
+        .await
+        .context("Failed to spawn blocking task.")??;
 
     // only set to Some if we find stored credentials
     // so even if the default password ends up matching (somehow)
     // we never authenticate a non-existent user.
     user_id
-        .ok_or_else(|| anyhow::anyhow!("Unknown username."))
+        .ok_or_else(|| anyhow::anyhow!("Unknown username"))
         .map_err(AuthError::InvalidCredentials)
         .map(|id| (id, totp_enabled))
 }
@@ -140,4 +147,26 @@ fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow
     .hash_password(password.expose_secret().as_bytes(), &salt)?
     .to_string();
     Ok(SecretString::new(Box::from(password_hash)))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn verify_password_hash_gives_correct_context() {
+        let fake_expected_password_hash = SecretString::new("improperly_formatted_hash".into());
+        let fake_password_candidate = SecretString::new("fake_candidate".into());
+
+        let result = verify_password_hash(&fake_expected_password_hash, &fake_password_candidate);
+
+        let AuthError::UnexpectedError(e) = result.unwrap_err() else {
+            panic!("expected AuthError::UnexpectedError");
+        };
+
+        assert!(
+            e.to_string()
+                .contains("Failed to parse hash in PHC string format.")
+        );
+    }
 }

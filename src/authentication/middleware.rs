@@ -11,7 +11,7 @@ use std::ops::Deref;
 use uuid::Uuid;
 
 use crate::session_state::TypedSession;
-use crate::utils::{e500, unauthorized};
+use crate::utils::unauthorized;
 
 #[derive(Copy, Clone, Debug)]
 pub struct UserId(Uuid);
@@ -41,9 +41,18 @@ pub async fn reject_anonymous_users(
     let session = {
         let (http_request, payload) = req.parts_mut();
         TypedSession::from_request(http_request, payload).await
-    }?;
+    };
 
-    if let Some(user_id) = session.get_user_id().map_err(e500)? {
+    // SAFETY: TypedSession::from_request always returns Ok(). If the session middleware
+    // isn't configured, get_session() will panic since the middleware is a critical
+    // component.
+    let session = session.expect("session middleware not configured");
+
+    // SAFETY: A panic here is correct behavior. insert_user_id only accepts UUID,
+    // so the stored value will always be deserializable as Uuid, and calling unwrap()
+    // on get_user_id is acceptable. This is in effect, equivalent to the session
+    // middleware not being configured.
+    if let Some(user_id) = session.get_user_id().expect("user_id not found") {
         req.extensions_mut().insert(UserId(user_id));
         next.call(req).await
     } else {
@@ -74,7 +83,7 @@ pub async fn cross_site_request_forgery_protection(
             .headers()
             .get(XSRF_HEADER_NAME)
             .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
+            .map(&str::to_string);
 
         match (cookie_val, header_val) {
             (Some(c), Some(h)) if !c.is_empty() && c == h => {}
@@ -86,8 +95,7 @@ pub async fn cross_site_request_forgery_protection(
     // only generate fresh if absent
     let token = request
         .cookie(XSRF_COOKIE_NAME)
-        .map(|c| c.value().to_string())
-        .unwrap_or_else(|| Uuid::new_v4().to_string());
+        .map_or_else(|| Uuid::new_v4().to_string(), |c| c.value().to_string());
 
     let mut res = next.call(request).await?;
 

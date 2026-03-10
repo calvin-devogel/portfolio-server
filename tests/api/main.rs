@@ -1,5 +1,6 @@
 mod blog;
 mod check_auth;
+mod csrf;
 mod health_check;
 mod helpers;
 mod idempotency;
