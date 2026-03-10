@@ -9,22 +9,22 @@ fail() {
     exit 1
 }
 
-echo "→ Formatting..."
+echo "\n→ Formatting...\n"
 cargo fmt --check || fail "Formatting"
 
-echo "→ Running Clippy..."
+echo "\n→ Running Clippy...\n"
 cargo clippy -- -D warnings || fail "Clippy"
 
-echo "→ Running tests..."
+echo "\n→ Running tests...\n"
 cargo test || fail "Tests"
 
-echo "→ Auditing dependencies..."
-cargo audit || echo "${YELLOW}⚠${RESET} Audit found vulnerabilities (non-blocking)." >&2
+echo "\n→ Auditing dependencies...\n"
+cargo audit || echo "\n${YELLOW}⚠${RESET} Audit found vulnerabilities (non-blocking).\n" >&2
 
-echo "→ Looking for unused dependencies..."
+echo "\n→ Looking for unused dependencies...\n"
 cargo machete || fail "Machete"
 
-echo "→ Preparing queries"
+echo "\n→ Preparing queries\n"
 cargo sqlx prepare -- --all-targets || fail "Query Prep"
 
-echo "${GREEN}✓${RESET} Pre-push checks passed."
+echo "\n${GREEN}✓${RESET} Pre-push checks passed.\n"
