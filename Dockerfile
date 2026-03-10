@@ -6,7 +6,7 @@ ARG TARGET_ARCH=x86_64
 ENV TARGET=${TARGET_ARCH}
 
 RUN rustup target add ${TARGET}-unknown-linux-musl
-RUN apk update && apk add musl-utils musl-dev pkgconf openssl-dev
+RUN apk update && apk add musl-utils musl-dev
 FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json

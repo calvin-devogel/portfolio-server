@@ -7,12 +7,6 @@ cors:
     - "https://devogel.dev"
   max_age: 3600
 rate_limit:
-  login:
-    max_requests: 10
-    window_secs: 1
-  totp:
-    max_requests: 10
-    window_secs: 1
   message:
     max_messages: 3
     window_minutes: 60

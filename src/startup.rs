@@ -1,5 +1,4 @@
 use actix_cors::Cors;
-use actix_limitation::Limiter;
 use actix_session::{
     SessionMiddleware,
     config::{PersistentSession, TtlExtensionPolicy},
@@ -17,13 +16,12 @@ use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageSto
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
-use std::time::Duration;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
     authentication::{cross_site_request_forgery_protection, reject_anonymous_users},
     configuration::{
-        CorsSettings, DatabaseSettings, LoginLimiter, RateLimitSettings, Settings, TotpLimiter,
+        CorsSettings, DatabaseSettings, RateLimitSettings, Settings,
         TtlSettings,
     },
     routes::{
@@ -177,6 +175,7 @@ async fn run(
         .same_site(SameSite::Strict)
         .build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
+
     tracing::info!("Connecting to Redis session store...");
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret())
         .await
@@ -189,34 +188,6 @@ async fn run(
             anyhow::anyhow!("Redis session store connection failed: {e}")
         })?;
     tracing::info!("Redis session store connected");
-
-    let login_limiter = Limiter::builder(redis_uri.expose_secret())
-        .limit(util_config.rate.login.max_requests)
-        .period(Duration::from_secs(util_config.rate.login.window_secs))
-        .build()
-        .map_err(|e| {
-            tracing::error!(
-                error.cause_chain = ?e,
-                error.message = %e,
-                "Failed to build login rate limiter"
-            );
-            anyhow::anyhow!("Failed to build login rate limiter: {e}")
-        })?;
-
-    let totp_limiter = Limiter::builder(redis_uri.expose_secret())
-        .limit(util_config.rate.totp.max_requests)
-        .period(Duration::from_secs(util_config.rate.totp.window_secs))
-        .build()
-        .map_err(|e| {
-            tracing::error!(
-                error.cause_chain = ?e,
-                error.message = %e,
-                "Failed to build TOTP rate limiter"
-            );
-            anyhow::anyhow!("Failed to build TOTP rate limiter: {e}")
-        })?;
-    
-    tracing::info!("Rate limiters configured");
 
     let server = HttpServer::new(move || {
         App::new()
@@ -313,8 +284,6 @@ async fn run(
             .app_data(base_url.clone())
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
             .app_data(Data::new(util_config.rate.message.clone()))
-            .app_data(Data::new(LoginLimiter(login_limiter.clone())))
-            .app_data(Data::new(TotpLimiter(totp_limiter.clone())))
             .app_data(Data::new(totp_encryption_key.clone()))
     })
     .listen(listener)?
