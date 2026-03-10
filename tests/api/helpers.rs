@@ -13,7 +13,7 @@ use uuid::Uuid;
 use portfolio_server::{
     configuration::{DatabaseSettings, get_configuration},
     startup::{Application, get_connection_pool},
-    telemetry::{get_subscriber, init_subscriber}
+    telemetry::{get_subscriber, init_subscriber},
 };
 
 // ensure the `tracing` task is only initialized once using `LazyLock`

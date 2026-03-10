@@ -23,7 +23,7 @@ pub async fn login(
     request: web::Form<LoginRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
-) -> Result<HttpResponse, InternalError<AuthError>> {    
+) -> Result<HttpResponse, InternalError<AuthError>> {
     let credentials = Credentials {
         username: request.username.clone(),
         password: request.password.clone(),

@@ -19,7 +19,10 @@ pub struct VerifyTotpRequest {
 }
 
 #[allow(clippy::future_not_send)]
-#[tracing::instrument(name = "Verify TOTP code", skip(pool, session, request, encryption_key))]
+#[tracing::instrument(
+    name = "Verify TOTP code",
+    skip(pool, session, request, encryption_key)
+)]
 pub async fn verify_totp(
     request: web::Json<VerifyTotpRequest>,
     pool: web::Data<PgPool>,
@@ -36,9 +39,9 @@ pub async fn verify_totp(
         .map_err(e500)?
         .ok_or_else(|| actix_web::error::ErrorUnauthorized("TOTP not configured for user"))?;
 
-    let totp_secret = String::from_utf8(
-        crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?
-    ).map_err(e500)?;
+    let totp_secret =
+        String::from_utf8(crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?)
+            .map_err(e500)?;
 
     let totp = TOTP::new(
         Algorithm::SHA1,

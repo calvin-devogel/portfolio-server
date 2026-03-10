@@ -125,7 +125,7 @@ pub async fn post_message(
     execute_idempotent(&request, pool.get_ref(), None, move |tx| {
         let config_for_op = config_for_op.clone();
         Box::pin(
-            async move { process_new_message(tx, &config_for_op.get_ref(), message_to_post).await },
+            async move { process_new_message(tx, config_for_op.get_ref(), message_to_post).await },
         )
     })
     .await

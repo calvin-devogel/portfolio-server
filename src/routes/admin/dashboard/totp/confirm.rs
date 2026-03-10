@@ -35,11 +35,12 @@ pub async fn totp_confirm(
         return Ok(HttpResponse::Conflict().finish());
     }
 
-    let encrypted = row.totp_secret
+    let encrypted = row
+        .totp_secret
         .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progres"))?;
-    let secret_b32 = String::from_utf8(
-        crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?
-    ).map_err(e500)?;
+    let secret_b32 =
+        String::from_utf8(crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?)
+            .map_err(e500)?;
 
     let totp = TOTP::new(
         Algorithm::SHA1,

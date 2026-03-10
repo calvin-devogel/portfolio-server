@@ -1,3 +1,3 @@
-mod pagination;
+mod types;
 
-pub use pagination::*;
+pub use types::*;

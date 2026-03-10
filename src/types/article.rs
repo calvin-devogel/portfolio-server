@@ -29,12 +29,12 @@ pub enum ArticleSection {
 impl ArticleSection {
     pub fn validate(&self) -> Result<(), BlogError> {
         match self {
-            Self::Markdown { content } if content.len() > 20_000 => {
-                Err(BlogError::ValidationError("Section content too large".into()))
-            }
-            Self::Carousel { slides, .. } if slides.len() > 20 => {
-                Err(BlogError::ValidationError("Too many carousel slides".into()))
-            }
+            Self::Markdown { content } if content.len() > 20_000 => Err(
+                BlogError::ValidationError("Section content too large".into()),
+            ),
+            Self::Carousel { slides, .. } if slides.len() > 20 => Err(BlogError::ValidationError(
+                "Too many carousel slides".into(),
+            )),
             _ => Ok(()),
         }
     }
@@ -53,6 +53,7 @@ pub struct ArticleRecord {
     pub updated_at: DateTime<Utc>,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl ArticleRecord {
     pub fn try_from_row(
         post_id: Uuid,
@@ -156,9 +157,15 @@ impl ArticleForm {
         ];
         for (name, value) in fields {
             match name {
-                "title" if value.len() > 200 => return Err(BlogError::ValidationError("Invalid title".into())),
-                "excerpt" if value.len() > 1000 => return Err(BlogError::ValidationError("Invalid excerpt".into())),
-                "author" if value.len() > 100 => return Err(BlogError::ValidationError("Invalid author".into())),
+                "title" if value.len() > 200 => {
+                    return Err(BlogError::ValidationError("Invalid title".into()));
+                }
+                "excerpt" if value.len() > 1000 => {
+                    return Err(BlogError::ValidationError("Invalid excerpt".into()));
+                }
+                "author" if value.len() > 100 => {
+                    return Err(BlogError::ValidationError("Invalid author".into()));
+                }
                 _ => {}
             }
         }
@@ -201,25 +208,28 @@ pub struct ArticleEditRequest {
 
 impl ArticleEditRequest {
     pub fn sections_as_json(&self) -> Result<Option<serde_json::Value>, serde_json::Error> {
-        self.sections
-            .as_ref()
-            .map(|s| serde_json::to_value(s))
-            .transpose()
+        self.sections.as_ref().map(serde_json::to_value).transpose()
     }
 
     pub fn validate(&self) -> Result<(), BlogError> {
         let fields = [
             ("title", &self.title),
             ("excerpt", &self.excerpt),
-            ("author", &self.author)
+            ("author", &self.author),
         ];
 
         for (name, value) in fields {
             if let Some(val) = value {
                 match name {
-                    "title" if val.len() > 200 => return Err(BlogError::ValidationError("Invalid title".into())),
-                    "excerpt" if val.len() > 1000 => return Err(BlogError::ValidationError("Invalid excerpt".into())),
-                    "author" if val.len() > 100 => return Err(BlogError::ValidationError("Invalid author".into())),
+                    "title" if val.len() > 200 => {
+                        return Err(BlogError::ValidationError("Invalid title".into()));
+                    }
+                    "excerpt" if val.len() > 1000 => {
+                        return Err(BlogError::ValidationError("Invalid excerpt".into()));
+                    }
+                    "author" if val.len() > 100 => {
+                        return Err(BlogError::ValidationError("Invalid author".into()));
+                    }
                     _ => {}
                 }
             }

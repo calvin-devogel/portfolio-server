@@ -75,11 +75,11 @@ async fn process_new_article(
                 .json(ArticleResponse::new("Post received successfully", post_id)))
         }
         Err(e) => {
-            if let sqlx::Error::Database(db_err) = &e {
-                if db_err.code().as_deref() == Some("23505") {
-                    tracing::warn!("Duplicate post detected");
-                    return Err(BlogError::DuplicatePost.into());
-                }
+            if let sqlx::Error::Database(db_err) = &e
+                && db_err.code().as_deref() == Some("23505")
+            {
+                tracing::warn!("Duplicate post detected");
+                return Err(BlogError::DuplicatePost.into());
             }
 
             tracing::error!("Failed to save post: {e:?}");

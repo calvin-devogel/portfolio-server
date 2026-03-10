@@ -20,10 +20,7 @@ use tracing_actix_web::TracingLogger;
 
 use crate::{
     authentication::{cross_site_request_forgery_protection, reject_anonymous_users},
-    configuration::{
-        CorsSettings, DatabaseSettings, RateLimitSettings, Settings,
-        TtlSettings,
-    },
+    configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
         check_auth, delete_article, edit_article, get_articles, get_messages, health_check,
         insert_article, login, logout, patch_message, post_message, publish_article, root,
@@ -99,14 +96,12 @@ impl Application {
             .totp_encryption_key
             .expose_secret()
             .as_bytes();
-        let key: [u8; 32] = raw_totp_key
-            .try_into()
-            .map_err(|_| {
-                tracing::error!(
-                    key_len = raw_totp_key.len(),
-                    "totp_encryption_key is not exactly 32 bytes"
-                );
-                anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes")
+        let key: [u8; 32] = raw_totp_key.try_into().map_err(|_| {
+            tracing::error!(
+                key_len = raw_totp_key.len(),
+                "totp_encryption_key is not exactly 32 bytes"
+            );
+            anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes")
         })?;
         let totp_key = TotpEncryptionKey(key);
 

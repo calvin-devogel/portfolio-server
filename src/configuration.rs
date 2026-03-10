@@ -90,7 +90,6 @@ const fn default_message_rate_limit() -> MessageRateLimitSettings {
     }
 }
 
-
 #[derive(serde::Deserialize, Clone)]
 pub struct DatabaseSettings {
     pub username: String,

@@ -1,5 +1,5 @@
-use totp_rs::{Algorithm, Secret, TOTP};
 use crate::helpers::spawn_app;
+use totp_rs::{Algorithm, Secret, TOTP};
 
 const TOTP_TEST_SECRET: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PX";
 
@@ -110,7 +110,8 @@ async fn totp_confirm_when_already_enabled_returns_409() {
     let app = spawn_app().await;
     let totp = app.test_user.enable_totp(&app.db_pool).await;
     app.post_login(&app.test_user).await;
-    app.post_verify_totp(&totp.generate_current().unwrap()).await;
+    app.post_verify_totp(&totp.generate_current().unwrap())
+        .await;
 
     let response = app.post_totp_confirm("123456").await;
 
@@ -133,12 +134,21 @@ async fn totp_disable_with_wrong_password_returns_401() {
     app.test_user.login(&app).await;
     app.post_verify_totp(
         &TOTP::new(
-            Algorithm::SHA1, 6, 1, 30,
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
             Secret::Encoded(TOTP_TEST_SECRET.to_string())
-                .to_bytes().unwrap(),
-                None, "test".to_string(),
-        ).unwrap().generate_current().unwrap()
-    ).await;
+                .to_bytes()
+                .unwrap(),
+            None,
+            "test".to_string(),
+        )
+        .unwrap()
+        .generate_current()
+        .unwrap(),
+    )
+    .await;
 
     let response = app.post_totp_disable("wrong-password").await;
 
@@ -152,12 +162,21 @@ async fn totp_disable_with_correct_password_clears_totp() {
     app.test_user.login(&app).await;
     app.post_verify_totp(
         &TOTP::new(
-            Algorithm::SHA1, 6, 1, 30,
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
             Secret::Encoded(TOTP_TEST_SECRET.to_string())
-                .to_bytes().unwrap(),
-                None, "test".to_string(),
-        ).unwrap().generate_current().unwrap()
-    ).await;
+                .to_bytes()
+                .unwrap(),
+            None,
+            "test".to_string(),
+        )
+        .unwrap()
+        .generate_current()
+        .unwrap(),
+    )
+    .await;
 
     let response = app.post_totp_disable(&app.test_user.password.clone()).await;
 
@@ -182,16 +201,25 @@ async fn after_disabling_totp_login_returns_200_not_202() {
     app.test_user.login(&app).await;
     app.post_verify_totp(
         &TOTP::new(
-            Algorithm::SHA1, 6, 1, 30,
+            Algorithm::SHA1,
+            6,
+            1,
+            30,
             Secret::Encoded(TOTP_TEST_SECRET.to_string())
-                .to_bytes().unwrap(),
-                None, "test".to_string(),
-        ).unwrap().generate_current().unwrap()
-    ).await;
+                .to_bytes()
+                .unwrap(),
+            None,
+            "test".to_string(),
+        )
+        .unwrap()
+        .generate_current()
+        .unwrap(),
+    )
+    .await;
     app.post_totp_disable(&app.test_user.password.clone()).await;
     app.post_logout().await;
 
     let response = app.post_login(&app.test_user).await;
 
-    assert_eq!(response.status().as_u16(), 200);    
+    assert_eq!(response.status().as_u16(), 200);
 }

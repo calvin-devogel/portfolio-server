@@ -1,11 +1,11 @@
 use actix_web::{
     FromRequest, HttpMessage,
     body::MessageBody,
+    cookie::{Cookie, SameSite},
     dev::{ServiceRequest, ServiceResponse},
     error::InternalError,
-    middleware::Next,
-    cookie::{Cookie, SameSite},
     http::Method,
+    middleware::Next,
 };
 use std::ops::Deref;
 use uuid::Uuid;
@@ -61,10 +61,15 @@ pub async fn cross_site_request_forgery_protection(
     request: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
-    let is_safe = matches!(request.method(), &Method::GET | &Method::HEAD | &Method::OPTIONS);
+    let is_safe = matches!(
+        request.method(),
+        &Method::GET | &Method::HEAD | &Method::OPTIONS
+    );
 
     if !is_safe {
-        let cookie_val = request.cookie(XSRF_COOKIE_NAME).map(|c| c.value().to_string());
+        let cookie_val = request
+            .cookie(XSRF_COOKIE_NAME)
+            .map(|c| c.value().to_string());
         let header_val = request
             .headers()
             .get(XSRF_HEADER_NAME)
