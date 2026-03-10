@@ -1,0 +1,126 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+env:
+    CARGO_TERM_COLOR: always
+    SQLX_OFFLINE: "true"
+
+jobs:
+    fmt:
+        name: Format
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                components: rustfmt
+            - run: cargo fmt --check
+    
+    clippy:
+        name: Clippy
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+            - uses: dtolnay/rust-toolchain@stable
+              with:
+                components: clippy
+            - uses: Swatinem/rust-cache@v2
+            - run: cargo clippy -- -D warnings
+    
+    test:
+        name: Integration Tests
+        runs-on: ubuntu-latest
+        services:
+            postgres:
+                image: postgres:17-alpine
+                env:
+                    POSTGRES_USER: postgres
+                    POSTGRES_PASSWORD: password
+                ports:
+                    - 5432:5432
+                options: >-
+                    --health-cmd pg_isready
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries 5
+            valkey:
+                image: valkey/valkey:8-alpine
+                ports:
+                    - 6379:6379
+                options: >-
+                    --health-cmd "valkey-cli ping"
+                    --health-interval 10s
+                    --health-timeout 5s
+                    --health-retries
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+            
+            - name: Install sqlx-cli
+              run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked
+
+            - name: Create app database user
+              run: |
+                psql -h localhost -U postgres \
+                    -c "CREATE USER app WITH PASSWORD 'secret'" \
+                    -c "ALTER USER app CREATEDB;"
+              env:
+                PGPASSWORD: password
+            
+            - name: Run migrations
+              run: SKIP_DOCKER=true ./scripts/init_db.sh
+              env:
+                SUPERUSER: postgres
+                SUPERUSER_PWD: password
+                APP_USER: app
+                APP_USER_PWD: secret
+                APP_DB_NAME: portfolio
+            
+            - name: Run test
+              run: cargo test
+              env:
+                APP_ENVIRONMENT: local
+    
+    docker-build:
+        name: Docker Build
+        needs: [fmt, clippy, test]
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+        steps:
+            - uses: actions/checkout@v4
+            - uses: docker/setup-buildx-action@v3
+
+            - name: Log in to GHCR
+              if: github.ref == 'refs/heads/main'
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.actor }}
+                password: ${{ secrets.GITHUB_TOKEN }}
+            
+            - uses: docker/build-push-action@v6
+              with:
+                context: .
+                push: ${{ github.ref == 'refs/head/main' }}
+                tags: ghcr.io/${{ github.repository_owner }}/portfolio-server:latest
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+
+    deploy:
+        name: Deploy
+        needs: docker-build
+        runs-on: ubuntu-latest
+        if: github.ref == 'refs/head/main'
+        environment: production
+        steps:
+            - name: Deploy to production
+              run: echo "Add deployment steps here"
