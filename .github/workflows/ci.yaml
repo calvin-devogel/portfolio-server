@@ -128,4 +128,9 @@ jobs:
         environment: production
         steps:
             - name: Deploy to production
-              run: echo "Add your deployment steps here"
+              uses: digitalocean/action-doctl@v2
+              with:
+                token: ${{ secrets.DO_API_TOKEN }}
+            
+            - name: Trigger deployment
+              run: doctl apps create-deployment ${{ secrets.DO_APP_ID }} --wait
