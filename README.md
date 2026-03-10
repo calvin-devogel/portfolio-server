@@ -7,3 +7,6 @@ if you need to re-register a prebuilt image again:
 `docker pull --platform linux/x86_64 ghcr.io/<your-username>/<image-name>:latest`
 `docker tag ghcr.io/<your-username>/<image-name>:latest registry.digitalocean.com/<registry-name>/<image-name>:latest`
 `docker push registry.digitalocean.com/<registry-name>/<image-name>:latest`
+
+to get coverage report:
+`cargo llvm-cov --open`
