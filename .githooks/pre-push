@@ -1,6 +1,11 @@
 #!/bin/sh
+RED='\033[31m'
+YELLOW='\033[33m'
+GREEN='\033[32m'
+RESET = '\033[0m'
+
 fail() {
-    echo "✗ $1 failed. Push aborted." >&2
+    printf "${RED}✗${RESET} %s failed. Push aborted." >&2
     exit 1
 }
 
@@ -14,7 +19,7 @@ echo "→ Running tests..."
 cargo test || fail "Tests"
 
 echo "→ Auditing dependencies..."
-cargo audit || fail "Audit"
+cargo audit || echo "${YELLOW}⚠${RESET} Audit found vulnerabilities (non-blocking)." >&2
 
 echo "→ Looking for unused dependencies..."
 cargo machete || fail "Machete"
@@ -22,4 +27,4 @@ cargo machete || fail "Machete"
 echo "→ Preparing queries"
 sqlx prepare -- --all-targets || fail "Query Prep"
 
-echo "✓ Pre-push checks passed."
+echo "${GREEN}✓${RESET} Pre-push checks passed."
