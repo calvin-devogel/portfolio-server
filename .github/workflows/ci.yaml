@@ -56,7 +56,7 @@ jobs:
                     --health-cmd "valkey-cli ping"
                     --health-interval 10s
                     --health-timeout 5s
-                    --health-retries
+                    --health-retries 5
         steps:
             - uses: actions/checkout@v4
 
@@ -110,7 +110,7 @@ jobs:
             - uses: docker/build-push-action@v6
               with:
                 context: .
-                push: ${{ github.ref == 'refs/head/main' }}
+                push: ${{ github.ref == 'refs/heads/main' }}
                 tags: ghcr.io/${{ github.repository_owner }}/portfolio-server:latest
                 cache-from: type=gha
                 cache-to: type=gha,mode=max
