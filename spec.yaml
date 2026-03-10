@@ -4,10 +4,10 @@ services:
   - name: portfolio-server
     dockerfile_path: Dockerfile
     source_dir: .
-    github:
-      branch: main
-      deploy_on_push: false
-      repo: calvin-devogel/portfolio-backend
+    image:
+      registry_type: DOCR
+      registry: portfolio-project-registry
+      repository: portfolio-server
     health_check:
       http_path: /health_check
     http_port: 8000

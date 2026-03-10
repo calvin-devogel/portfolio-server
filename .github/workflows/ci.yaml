@@ -10,6 +10,10 @@ env:
     CARGO_TERM_COLOR: always
     SQLX_OFFLINE: "true"
 
+permissions:
+    contents: read
+    packages: write
+
 jobs:
     fmt:
         name: Format
@@ -97,26 +101,24 @@ jobs:
         name: Docker Build
         needs: [fmt, clippy, test]
         runs-on: ubuntu-latest
-        permissions:
-            contents: read
-            packages: write
+        if: github.ref == 'refs/heads/main'
         steps:
             - uses: actions/checkout@v4
             - uses: docker/setup-buildx-action@v3
 
-            - name: Log in to GHCR
-              if: github.ref == 'refs/heads/main'
-              uses: docker/login-action@v3
+            - name: Authenticate with DigitalOcean
+              uses: digitalocean/action-doctl@v2
               with:
-                registry: ghcr.io
-                username: ${{ github.actor }}
-                password: ${{ secrets.GITHUB_TOKEN }}
+                token: ${{ secrets.DO_API_TOKEN }}
+            
+            - name: Log in to DOCR
+              run: doctl registry login --expiry-seconds 600
             
             - uses: docker/build-push-action@v6
               with:
                 context: .
-                push: ${{ github.ref == 'refs/heads/main' }}
-                tags: ghcr.io/${{ github.repository_owner }}/portfolio-server:latest
+                push: true
+                tags: registry.digitalocean.com/${{ secrets.DO_REGISTRY_NAME }}/portfolio-server:latest
                 cache-from: type=gha
                 cache-to: type=gha,mode=max
 
@@ -127,7 +129,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         environment: production
         steps:
-            - name: Deploy to production
+            - name: Authenticate with DigitalOcean
               uses: digitalocean/action-doctl@v2
               with:
                 token: ${{ secrets.DO_API_TOKEN }}
