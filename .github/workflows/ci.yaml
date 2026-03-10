@@ -36,18 +36,6 @@ jobs:
         name: Integration Tests
         runs-on: ubuntu-latest
         services:
-            postgres:
-                image: postgres:17-alpine
-                env:
-                    POSTGRES_USER: postgres
-                    POSTGRES_PASSWORD: password
-                ports:
-                    - 5432:5432
-                options: >-
-                    --health-cmd pg_isready
-                    --health-interval 10s
-                    --health-timeout 5s
-                    --health-retries 5
             valkey:
                 image: valkey/valkey:8-alpine
                 ports:
@@ -62,6 +50,23 @@ jobs:
 
             - uses: dtolnay/rust-toolchain@stable
             - uses: Swatinem/rust-cache@v2
+
+            # Rust's run-in-parallel tests are exhausting the default connection limit
+            # for the "services" version of postgres containers, so we need bo build it
+            # ourselves
+            - name: Start PostgreSQL
+              run: |
+                docker run -d \
+                    --name postgres \
+                    -e POSTGRES_USER=postgres \
+                    -e POSTGRES_PASSWORD=password \
+                    -p 5432:5432 \
+                    postgres:17-alpine -N 1000
+                until docker exec postgres pg_isready -U postgres; do
+                    echo "Waiting for PostgreSQL..."
+                    sleep 1
+                done
+
             
             - name: Install sqlx-cli
               run: cargo install sqlx-cli --no-default-features --features rustls,postgres --locked
