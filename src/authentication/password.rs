@@ -47,11 +47,11 @@ pub async fn validate_credentials(
     validate_credentials_with_verifier(credentials, pool, verify_password_hash).await
 }
 
+#[doc(hidden)]
 #[tracing::instrument("Validate credentials", skip(credentials, pool, verify_fn))]
 /// # Errors
 /// shoots off an `AuthError::InvalidCredentials` if the hash for the provided `credentials` cannot be verified
 /// or an `anyhow` error if the `username` doesn't exist in the database
-#[doc(hidden)]
 pub async fn validate_credentials_with_verifier<F>(
     credentials: Credentials,
     pool: &PgPool,
@@ -122,8 +122,7 @@ pub async fn change_password(
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
     let password_hash = spawn_blocking_with_tracing(move || compute_password_hash(&password))
-        .await?
-        .context("Failed to hash password.")?;
+        .await?;
 
     sqlx::query!(
         r#"
@@ -140,7 +139,7 @@ pub async fn change_password(
     Ok(())
 }
 
-fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
+fn compute_password_hash(password: &SecretString) -> SecretString {
     let salt = SaltString::generate(&mut OsRng);
     // expect is acceptable here because password hashing should never fail
     // if Argon2 is configured and working properly, and we aren't testing Argon2
@@ -153,7 +152,7 @@ fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow
     .hash_password(password.expose_secret().as_bytes(), &salt)
     .expect("Password hashing failed")
     .to_string();
-    Ok(SecretString::new(Box::from(password_hash)))
+    SecretString::new(Box::from(password_hash))
 }
 
 #[cfg(test)]

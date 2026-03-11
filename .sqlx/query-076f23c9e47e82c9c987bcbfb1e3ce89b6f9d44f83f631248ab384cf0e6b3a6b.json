@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            response_status_code as \"response_status_code!\",\n            response_headers as \"response_headers!: Vec<HeaderPairRecord>\",\n            response_body as \"response_body!\"\n        FROM idempotency\n        WHERE\n            idempotency_key = $2\n            AND operation = $3\n            AND (user_id = $1 OR (user_id IS NULL AND $1 IS NULL))\n        ",
+  "query": "\n        SELECT\n            response_status_code as \"response_status_code!\",\n            response_headers as \"response_headers!: Vec<HeaderPairRecord>\",\n            response_body as \"response_body!\"\n        FROM idempotency\n        WHERE\n            idempotency_key = $2\n            AND operation = $3\n            AND response_status_code IS NOT NULL\n            AND (user_id = $1 OR (user_id IS NULL AND $1 IS NULL))\n        ",
   "describe": {
     "columns": [
       {
@@ -55,5 +55,5 @@
       true
     ]
   },
-  "hash": "7e325d34baf8007e257d31574d72d36206ecbc4449509ecb806c9e14079e0e6a"
+  "hash": "076f23c9e47e82c9c987bcbfb1e3ce89b6f9d44f83f631248ab384cf0e6b3a6b"
 }
