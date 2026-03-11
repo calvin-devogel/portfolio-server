@@ -1,5 +1,5 @@
 # build
-FROM lukemathwalker/cargo-chef:latest-rust-1.93-alpine3.23 AS chef
+FROM lukemathwalker/cargo-chef:latest-rust-alpine3.23 AS chef
 WORKDIR /app
 
 ARG TARGET_ARCH=x86_64
