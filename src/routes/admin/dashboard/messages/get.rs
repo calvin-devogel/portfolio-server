@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::MessageGetError,
-    pagination::{PaginationMeta, PaginationQuery},
+    types::pagination::{PaginationMeta, PaginationQuery},
 };
 
 // query messages in page form, minimum 0, maximum 20 per page

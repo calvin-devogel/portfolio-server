@@ -65,3 +65,18 @@ pub struct PaginatedResponse<T> {
     pub data: Vec<T>,
     pub pagination: PaginationMeta,
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn query_page_size() {
+        let query = PaginationQuery {
+            page: 1,
+            page_size: default_page_size(),
+        };
+        assert_eq!(default_page_size(), query.page_size());
+        assert_eq!(default_page_size(), query.limit());
+    }
+}

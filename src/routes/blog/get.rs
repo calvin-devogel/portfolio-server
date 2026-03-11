@@ -3,8 +3,10 @@ use sqlx::PgPool;
 
 use crate::{
     errors::BlogError,
-    pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
-    types::article::{ArticleRecord, ArticleRecordRaw},
+    types::{
+        article::{ArticleRecord, ArticleRecordRaw},
+        pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
+    },
 };
 
 // TODO: content should change to an array of "type" entries called "sections",

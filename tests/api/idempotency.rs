@@ -270,3 +270,24 @@ async fn missing_transaction_operation_is_handled() {
 
     assert!(matches!(result, Err(IdempotencyError::UnexpectedError(_))));
 }
+
+#[tokio::test]
+async fn process_fn_error_is_handled() {
+    let app = spawn_app().await;
+
+    let request = actix_web::test::TestRequest::post()
+        .uri("/api/contact")
+        .insert_header(("Idempotency-Key", "error-key"))
+        .to_http_request();
+
+    let result: Result<HttpResponse, IdempotencyError> = execute_idempotent_with(
+        &request,
+        &app.db_pool,
+        None,
+        |_tx| Box::pin(async { Ok(HttpResponse::Ok().finish()) }),
+        |_, _, _, _| Box::pin(async { Err(IdempotencyError::RequestInFlight) }),
+    )
+    .await;
+
+    assert!(matches!(result, Err(IdempotencyError::UnexpectedError(_))));
+}

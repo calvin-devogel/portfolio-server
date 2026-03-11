@@ -28,6 +28,12 @@ pub enum NextAction {
 // tries to insert a new row with key + user_id (this will need to change)
 // if the row is able to be inserted -> StartProcessing a transaction
 // if the row already exists -> fetch saved response and return it
+/// as for why (NextAction::StartProcessing, None) is an unreachable state:
+///     - if n_inserted_rows > 0, return (NextAction::StartProcessing, Some(transaction))
+///     - if n_inserted_rows == 0, return *either*
+///         - (NextAction::ReturnSavedResponse(response), None) or
+///         - (IdempotencyError::RequestInFlight)
+/// so no path allows the match statement to find (NextAction, None)
 pub async fn try_processing(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
@@ -189,6 +195,8 @@ pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, Idem
     Ok(idempotency_key)
 }
 
+// wrapper for execute_idempotent_with that calls the default process_fn
+// (try_processing) that all non-test callers will use.
 pub async fn execute_idempotent<F, E>(
     request: &HttpRequest,
     pool: &PgPool,
@@ -212,18 +220,18 @@ where
 }
 
 /// jesus what a mess
-/// Here's what's happening here: since there are multiple different endpoints that require
+/// Here's what's happening in this signature: since there are multiple different endpoints that require
 /// idempotency, the flow for idempotent actions needs to be both reusable, and able to accept
 /// generic actions (`action: F`), and in order to test all paths in the match statement, we need to be
 /// able to mock process_fn in a way that allows us to return NextAction::StartProcessing
 /// accompanied by a missing transaction operation, since otherwise, that state is unreachable.
-/// (see try_processing for why that's an unreachable state in production)
+/// (see try_processing for why that's a practically unreachable state)
 /// So, from top to bottom: execute_idempotent_with is a function that takes as parameters:
 ///     - a reference to an HTTP request (this is where the actual data inserted/edited/etc. comes from)
 ///     - a reference to the Postgres connection pool
 ///     - an optional user_id depending on whether or not the action is anonymous
 ///     - an arbitrary `action: F` that:
-///         - is valid for all lifetimes 'a
+///         - is valid for all possible lifetimes 'a
 ///         - is executed a single time inside the idempotency pipeline
 ///         - returns a pinned, safe-to-poll pointer (valid for 'a) to a dynamically-dispatched future, the output of which:
 ///             - is a Result that on success, is an HTTP response
@@ -235,7 +243,7 @@ where
 ///         - is executed a single time inside the idempotency pipeline
 ///         - returns a pinned, safe-to-poll pointer (also valid for 'p) to a dynamically-dispatched future, the output of which:
 ///             - is a Result that on success, is a tuple containing a variant of NextAction and an "optional" Postgres transaction
-///               This right here adds another layer of complexity in the form of (`process_fn: P`). ^
+///               This right here adds another layer of complexity in the form of the process function. ^
 ///               (in practice, this transaction will never be None, but because a hypothetical future refactor *could* make
 ///               that state reachable, the match statement needs to account for that, and therefore, so does our testing suite,
 ///               thus the mockability requirement)
