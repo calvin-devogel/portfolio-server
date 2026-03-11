@@ -3,6 +3,7 @@ mod check_auth;
 mod csrf;
 mod health_check;
 mod helpers;
+mod home;
 mod idempotency;
 mod login;
 mod logout;

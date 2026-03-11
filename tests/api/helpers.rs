@@ -170,6 +170,13 @@ pub struct TestApp {
 }
 
 impl TestApp {
+    pub async fn get_home(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
     pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
     where
         Body: serde::Serialize,

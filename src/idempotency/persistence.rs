@@ -247,10 +247,10 @@ where
 ///               (in practice, this transaction will never be None, but because a hypothetical future refactor *could* make
 ///               that state reachable, the match statement needs to account for that, and therefore, so does our testing suite,
 ///               thus the mockability requirement)
-///             - and on error, is an arbitrary error E
+///             - and on error, is an arbitrary error E (wrapped in IdempotencyError::UnexpectedError)
 ///         - and takes as parameters:
 ///             - a reference to the Postgres connection pool
-///             - the idempotency key (a unique per-user_id UUID for each idempotent action)
+///             - the idempotency key (a caller-provided user_id + operation-scoped idempotency key)
 ///             - an optional user_id (for authenticated/anonymous actions)
 ///             - and an operation identifier (ie. "POST:/api/contact")
 /// and returns:
@@ -258,6 +258,21 @@ where
 ///     - and on error, is the generic error E from either `action`, `process` or itself, which must:
 ///         - be some variant of IdempotencyError, and implement std::fmt::Debug
 ///           (they all do, but Rust wants us to specify that anyway)
+///
+/// State machine: extract idempotency key from request header -> build operation key as `METHOD:PATH` -> ask process_fn what to do next
+///     -> StartProcessing + Some(tx) -> run once, then persist response in the same tx
+///     -> ReturnSavedResponse + _ -> return the cached response immediately
+///     -> StartProcessing + None -> treat as an invariant violation
+///
+/// Problem: prevent business logic side effects on retried requests
+/// Approach: claim idempotency slot, process once in transaction, cache full HTTP response
+/// Rust-Specific Challenge: generic async closures with lifetimes and transactional ownership
+/// Design Choice: injectable process_fn to keep flow reusable and ergonomically-tested
+///
+/// Trade-Offs:
+/// - response body is fully buffered in memory before persistence (?)
+/// - in-flight duplicates returns an error path rather than waiting for the first write completion
+/// - operation scope must include METHOD:PATH to prevent key collisions
 #[doc(hidden)]
 #[allow(clippy::future_not_send)]
 // reusable idempotency flow for all handlers that need it
@@ -285,7 +300,7 @@ where
     >,
     E: From<IdempotencyError> + std::fmt::Debug,
 {
-    let key = get_idempotency_key(&request.clone()).map_err(E::from)?;
+    let key = get_idempotency_key(&request).map_err(E::from)?;
     let operation = format!("{}:{}", request.method().as_str(), request.path());
     let (next, tx_opt) = process_fn(pool, &key, user_id, &operation)
         .await
