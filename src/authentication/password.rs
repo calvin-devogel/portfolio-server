@@ -121,8 +121,8 @@ pub async fn change_password(
     password: SecretString,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
-    let password_hash = spawn_blocking_with_tracing(move || compute_password_hash(&password))
-        .await?;
+    let password_hash =
+        spawn_blocking_with_tracing(move || compute_password_hash(&password)).await?;
 
     sqlx::query!(
         r#"

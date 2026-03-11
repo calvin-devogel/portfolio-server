@@ -201,15 +201,13 @@ where
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
     E: From<IdempotencyError> + std::fmt::Debug,
 {
-    execute_idempotent_with(
-        request,
-        pool,
-        user_id,
-        action,
-        |pool, key, user_id, op| Box::pin(async move {
-            try_processing(pool, key, user_id, op).await.map_err(|e| E::from(e))
-        }),
-    )
+    execute_idempotent_with(request, pool, user_id, action, |pool, key, user_id, op| {
+        Box::pin(async move {
+            try_processing(pool, key, user_id, op)
+                .await
+                .map_err(|e| E::from(e))
+        })
+    })
     .await
 }
 
@@ -270,15 +268,24 @@ where
         &'p PgPool,
         &'p IdempotencyKey,
         Option<Uuid>,
-        &'p str,    // operation identifier
-    ) -> Pin<Box<dyn Future<Output = Result<(NextAction, Option<Transaction<'static, Postgres>>), E>> + 'p>>,
+        &'p str, // operation identifier
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<(NextAction, Option<Transaction<'static, Postgres>>), E>>
+                + 'p,
+        >,
+    >,
     E: From<IdempotencyError> + std::fmt::Debug,
 {
     let key = get_idempotency_key(&request.clone()).map_err(E::from)?;
     let operation = format!("{}:{}", request.method().as_str(), request.path());
     let (next, tx_opt) = process_fn(pool, &key, user_id, &operation)
         .await
-        .map_err(|e| E::from(IdempotencyError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}"))))?;
+        .map_err(|e| {
+            E::from(IdempotencyError::UnexpectedError(anyhow::anyhow!(
+                "Unexpected error: {e:?}"
+            )))
+        })?;
 
     match (next, tx_opt) {
         (NextAction::ReturnSavedResponse(saved_response), _) => Ok(saved_response),
