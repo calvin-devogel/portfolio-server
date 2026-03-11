@@ -300,7 +300,7 @@ where
     >,
     E: From<IdempotencyError> + std::fmt::Debug,
 {
-    let key = get_idempotency_key(&request).map_err(E::from)?;
+    let key = get_idempotency_key(request).map_err(E::from)?;
     let operation = format!("{}:{}", request.method().as_str(), request.path());
     let (next, tx_opt) = process_fn(pool, &key, user_id, &operation)
         .await
