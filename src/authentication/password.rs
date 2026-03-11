@@ -52,11 +52,14 @@ pub async fn validate_credentials(
 /// shoots off an `AuthError::InvalidCredentials` if the hash for the provided `credentials` cannot be verified
 /// or an `anyhow` error if the `username` doesn't exist in the database
 #[doc(hidden)]
-pub async fn validate_credentials_with_verifier(
+pub async fn validate_credentials_with_verifier<F>(
     credentials: Credentials,
     pool: &PgPool,
-    verify_fn: impl FnOnce(&SecretString, &SecretString) -> Result<(), AuthError> + Send + 'static,
-) -> Result<(uuid::Uuid, bool), AuthError> {
+    verify_fn: F,
+) -> Result<(uuid::Uuid, bool), AuthError>
+where
+    F: FnOnce(&SecretString, &SecretString) -> Result<(), AuthError> + Send + 'static, // Trait Bounds!
+{
     let mut user_id = None;
     let mut totp_enabled = false;
     // this is a made-up hash to prevent timing attacks
@@ -139,12 +142,16 @@ pub async fn change_password(
 
 fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
     let salt = SaltString::generate(&mut OsRng);
+    // expect is acceptable here because password hashing should never fail
+    // if Argon2 is configured and working properly, and we aren't testing Argon2
+    // so there's no reason to propogate this error
     let password_hash = Argon2::new(
         Algorithm::Argon2id,
         Version::V0x13,
         Params::new(19456, 2, 1, None).unwrap(),
     )
-    .hash_password(password.expose_secret().as_bytes(), &salt)?
+    .hash_password(password.expose_secret().as_bytes(), &salt)
+    .expect("Password hashing failed")
     .to_string();
     Ok(SecretString::new(Box::from(password_hash)))
 }
@@ -160,9 +167,7 @@ mod test {
 
         let result = verify_password_hash(&fake_expected_password_hash, &fake_password_candidate);
 
-        let AuthError::UnexpectedError(e) = result.unwrap_err() else {
-            panic!("expected AuthError::UnexpectedError");
-        };
+        let e = result.unwrap_err();
 
         assert!(
             e.to_string()

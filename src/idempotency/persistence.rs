@@ -144,6 +144,7 @@ pub async fn get_saved_response(
         WHERE
             idempotency_key = $2
             AND operation = $3
+            AND response_status_code IS NOT NULL
             AND (user_id = $1 OR (user_id IS NULL AND $1 IS NULL))
         "#,
         user_id,
