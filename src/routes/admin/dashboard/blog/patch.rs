@@ -68,7 +68,7 @@ async fn process_edit_article(
     {
         tracing::warn!("No fields to update for post {}", post_id);
         return Err(
-            BlogError::UnexpectedError(anyhow::anyhow!("No fields provided to update")).into(),
+            BlogError::BadRequest(anyhow::anyhow!("No fields provided to update")).into(),
         );
     }
 

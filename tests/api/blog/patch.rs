@@ -1,6 +1,7 @@
 use crate::helpers::{
     ArticleRecord, ArticleSection, EditRequest, GetResponse, PublishRequest, spawn_app,
 };
+use uuid::Uuid;
 
 #[tokio::test]
 async fn authorized_user_can_publish_articles() {
@@ -132,4 +133,63 @@ async fn can_edit_articles() {
     };
 
     assert!(content.contains("edited post content"));
+}
+
+#[tokio::test]
+async fn editing_nonexistent_article_returns_not_found() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    let edit_body = EditRequest {
+        post_id: Uuid::new_v4(),
+        title: Some("New title".to_string()),
+        sections: None,
+        excerpt: None,
+        author: None,
+    };
+
+    let response = app.edit_article(&edit_body).await;
+    assert_eq!(response.status().as_u16(), 404);
+}
+
+
+#[tokio::test]
+async fn editing_article_with_no_fields_returns_error() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    let article = serde_json::json!({
+        "title": "Title",
+        "sections": [{"type": "markdown", "content": "fake post content..."}],
+        "excerpt": "fake blog...",
+        "author": "Andy Admin"
+    });
+
+    app.post_article(&article).await;
+
+    let get_response: GetResponse = app
+        .get_article("false", None)
+        .await
+        .json()
+        .await
+        .expect("Failed to get blog json");
+
+    let edit_body = serde_json::json!({ "post_id": get_response.data[0].post_id });
+    let response = app.edit_article(&edit_body).await;
+    // 500?
+    assert_eq!(response.status().as_u16(), 400);
+}
+
+#[tokio::test]
+async fn publishing_nonexistent_article_returns_not_found() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    let publish_body = PublishRequest {
+        post_id: Uuid::new_v4(),
+        published: true,
+    };
+
+    let response = app.publish_article(&publish_body).await;
+    assert_eq!(response.status().as_u16(), 404);
 }
