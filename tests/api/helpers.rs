@@ -275,7 +275,7 @@ impl TestApp {
         header_map.insert("BlogPost-Page", "1".parse().unwrap());
         header_map.insert("BlogPost-Page-Size", "20".parse().unwrap());
         header_map.insert(
-            "BlogPost-On-Published",
+            "BlogPost-OnPublished",
             on_published.parse().unwrap_or("false".parse().unwrap()),
         );
         if slug.is_some() {
