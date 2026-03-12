@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use crate::{
     errors::BlogError,
     pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
+    session_state::TypedSession,
     types::article::{ArticleRecord, ArticleRecordRaw},
 };
 
@@ -21,19 +22,30 @@ fn parse_header<T: std::str::FromStr>(req: &HttpRequest, key: &str) -> Option<T>
 
 #[tracing::instrument(
     name = "Get blog posts with pagination",
-    skip(pool),
-    fields(page, page_size, on_published, slug,)
+    skip(pool, session),
+    fields(page, page_size, on_published, slug)
 )]
 pub async fn get_articles(
     request: HttpRequest,
     pool: web::Data<PgPool>,
+    session: TypedSession,
 ) -> Result<HttpResponse, actix_web::Error> {
     let pagination = PaginationQuery {
         page: parse_header(&request, "BlogPost-Page").unwrap_or(1),
         page_size: parse_header(&request, "BlogPost-Page-Size").unwrap_or(20),
     };
 
-    let on_published = parse_header(&request, "BlogPost-On-Published").unwrap_or(false);
+    let is_authenticated = session
+        .get_user_id()
+        .map_err(|e| BlogError::UnexpectedError(anyhow::anyhow!(e)))?
+        .is_some();
+
+    let on_published = if is_authenticated {
+        parse_header(&request, "BlogPost-OnPublished").unwrap_or(false)
+    } else {
+        true
+    };
+
     let slug: Option<String> = parse_header_str(&request, "BlogPost-Slug").map(str::to_owned);
 
     tracing::Span::current()
