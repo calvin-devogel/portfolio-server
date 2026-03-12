@@ -46,3 +46,13 @@ async fn authorized_user_can_delete_articles() {
 
     assert!(blogs_response.data.len() == 0);
 }
+
+#[tokio::test]
+async fn deleting_nonexistent_article_returns_not_found() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    let body = serde_json::json!({ "post_id": Uuid::new_v4() });
+    let response = app.delete_article(&body).await;
+    assert_eq!(response.status().as_u16(), 404);
+}
