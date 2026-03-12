@@ -34,10 +34,12 @@ pub async fn verify_totp(
         .map_err(e500)?
         .ok_or_else(|| actix_web::error::ErrorUnauthorized("No MFA session in progress"))?;
 
+    // here we have another scenario where failure is practically unreachable,
+    // so expects/unwraps are acceptable
     let encrypted = get_totp_secret(user_id, &pool)
         .await
-        .map_err(e500)?
-        .ok_or_else(|| actix_web::error::ErrorUnauthorized("TOTP not configured for user"))?;
+        .expect("TOTP data corrupted for this user")
+        .unwrap();
 
     let totp_secret =
         String::from_utf8(crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?)
@@ -58,7 +60,7 @@ pub async fn verify_totp(
         session.clear_mfa_pending();
         session
             .insert_user_id(user_id)
-            .map_err(|e| e500(anyhow::anyhow!(e)))?;
+            .expect("Uuid serialization is infallible");
         Ok(HttpResponse::Ok().finish())
     } else {
         Ok(HttpResponse::Unauthorized().finish())

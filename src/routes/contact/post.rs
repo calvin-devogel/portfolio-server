@@ -246,4 +246,25 @@ mod test {
 
         assert!(good_form.is_ok());
     }
+
+    #[test]
+    fn too_long_validation_works() {
+        let long_name = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "a".repeat(101),
+            message_text: "a".repeat(10),
+        };
+
+        let result = &long_name.validate_name();
+        assert!(result.is_err());
+
+        let long_message = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "a".repeat(10),
+            message_text: "a".repeat(5001),
+        };
+
+        let result = &long_message.validate_message();
+        assert!(result.is_err());
+    }
 }

@@ -248,3 +248,35 @@ impl ArticleEditRequest {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::types::article::CarouselImage;
+
+    use super::ArticleSection;
+
+    #[test]
+    fn validate_size_limits() {
+        let content_too_large = "a".repeat(20_001);
+
+        let section = ArticleSection::Markdown {
+            content: content_too_large,
+        };
+        assert!(section.validate().is_err());
+
+        let slides: Vec<CarouselImage> = (0..21)
+            .map(|_| CarouselImage {
+                src: "A".to_string(),
+                alt: None,
+                caption: None,
+            })
+            .collect();
+
+        let carousel_section = ArticleSection::Carousel {
+            label: "placeholder".to_string(),
+            slides,
+        };
+
+        assert!(carousel_section.validate().is_err());
+    }
+}

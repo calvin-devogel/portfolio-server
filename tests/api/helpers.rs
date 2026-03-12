@@ -382,6 +382,14 @@ impl TestApp {
             .await
             .expect("Failed to execute request.")
     }
+
+    pub async fn get_totp_status(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/api/admin/totp/status", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {

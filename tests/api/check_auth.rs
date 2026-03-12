@@ -72,3 +72,20 @@ async fn change_password_works() {
 
     assert_eq!(result.status().as_u16(), 200);
 }
+
+#[tokio::test]
+async fn totp_status_works() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    // let user_id = app.test_user.user_id;
+    let response = app.get_totp_status().await;
+    assert_eq!(response.status().as_u16(), 200);
+    let response_body = &response.text().await.unwrap();
+    assert!(response_body.contains("\"totp_enabled\":false"));
+
+    app.test_user.enable_totp(&app.db_pool).await;
+    let response = app.get_totp_status().await;
+    let response_body = &response.text().await.unwrap();
+    assert!(response_body.contains("\"totp_enabled\":true"));
+}
