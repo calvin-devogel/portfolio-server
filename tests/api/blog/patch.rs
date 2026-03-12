@@ -152,7 +152,6 @@ async fn editing_nonexistent_article_returns_not_found() {
     assert_eq!(response.status().as_u16(), 404);
 }
 
-
 #[tokio::test]
 async fn editing_article_with_no_fields_returns_error() {
     let app = spawn_app().await;
