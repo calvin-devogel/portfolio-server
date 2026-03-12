@@ -303,12 +303,8 @@ where
     let key = get_idempotency_key(request).map_err(E::from)?;
     let operation = format!("{}:{}", request.method().as_str(), request.path());
     let (next, tx_opt) = process_fn(pool, &key, user_id, &operation)
-        .await
-        .map_err(|e| {
-            E::from(IdempotencyError::UnexpectedError(anyhow::anyhow!(
-                "Unexpected error: {e:?}"
-            )))
-        })?;
+        // propogate error directly from process_fn so we actually know what happened
+        .await?;
 
     match (next, tx_opt) {
         (NextAction::ReturnSavedResponse(saved_response), _) => Ok(saved_response),

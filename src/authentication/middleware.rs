@@ -11,7 +11,7 @@ use std::ops::Deref;
 use uuid::Uuid;
 
 use crate::session_state::TypedSession;
-use crate::utils::unauthorized;
+use crate::utils::{e500, unauthorized};
 
 #[derive(Copy, Clone, Debug)]
 pub struct UserId(Uuid);
@@ -52,7 +52,7 @@ pub async fn reject_anonymous_users(
     // so the stored value will always be deserializable as Uuid, and calling unwrap()
     // on get_user_id is acceptable. This is in effect, equivalent to the session
     // middleware not being configured.
-    if let Some(user_id) = session.get_user_id().expect("user_id not found") {
+    if let Some(user_id) = session.get_user_id().map_err(e500)? {
         req.extensions_mut().insert(UserId(user_id));
         next.call(req).await
     } else {

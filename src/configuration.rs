@@ -162,8 +162,7 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
                 .prefix_separator("_")
                 .separator("__"),
         )
-        .build()
-        .expect("Failed to build settings");
+        .build()?;
 
     settings.try_deserialize::<Settings>()
 }

@@ -8,9 +8,7 @@ pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, anyhow::Erro
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let ciphertext = cipher
         .encrypt(&nonce, plaintext)
-        // another acceptable .expect(), there's no reason for us
-        // to test AES-GCM itself, so assume this always works
-        .expect("AES-GCM encrypt failed");
+        .map_err(|_| anyhow::anyhow!("Encryption failed"))?;
     let mut out = nonce.to_vec();
     out.extend_from_slice(&ciphertext);
     Ok(out)

@@ -289,5 +289,9 @@ async fn process_fn_error_is_handled() {
     )
     .await;
 
-    assert!(matches!(result, Err(IdempotencyError::UnexpectedError(_))));
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err(),
+        IdempotencyError::RequestInFlight
+    ));
 }

@@ -62,8 +62,6 @@ where
 {
     let mut user_id = None;
     let mut totp_enabled = false;
-    // this is a made-up hash to prevent timing attacks
-    // thanks clippy what the fuck is this?
     let expected_password_hash =
         if let Some((stored_user_id, stored_password_hash, stored_totp_enabled)) =
             get_stored_credentials(&credentials.username, pool).await?
@@ -72,6 +70,7 @@ where
             totp_enabled = stored_totp_enabled;
             stored_password_hash
         } else {
+            // this is a made-up hash to prevent timing attacks
             SecretString::new(
                 "$argon2id$v=19$m=19456,t=2,p=1$\
                 gZiV/M1gPc22ElAH/Jh1Hw$\
@@ -121,8 +120,9 @@ pub async fn change_password(
     password: SecretString,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
-    let password_hash =
-        spawn_blocking_with_tracing(move || compute_password_hash(&password)).await?;
+    let password_hash = spawn_blocking_with_tracing(move || compute_password_hash(&password))
+        .await?
+        .context("Failed to compute password hash")?;
 
     sqlx::query!(
         r#"
@@ -139,7 +139,7 @@ pub async fn change_password(
     Ok(())
 }
 
-fn compute_password_hash(password: &SecretString) -> SecretString {
+fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
     let salt = SaltString::generate(&mut OsRng);
     // expect is acceptable here because password hashing should never fail
     // if Argon2 is configured and working properly, and we aren't testing Argon2
@@ -149,10 +149,9 @@ fn compute_password_hash(password: &SecretString) -> SecretString {
         Version::V0x13,
         Params::new(19456, 2, 1, None).unwrap(),
     )
-    .hash_password(password.expose_secret().as_bytes(), &salt)
-    .expect("Password hashing failed")
+    .hash_password(password.expose_secret().as_bytes(), &salt)?
     .to_string();
-    SecretString::new(Box::from(password_hash))
+    Ok(SecretString::new(Box::from(password_hash)))
 }
 
 #[cfg(test)]
