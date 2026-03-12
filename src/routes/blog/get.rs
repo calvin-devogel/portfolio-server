@@ -3,6 +3,7 @@ use sqlx::PgPool;
 
 use crate::{
     errors::BlogError,
+    session_state::TypedSession,
     types::{
         article::{ArticleRecord, ArticleRecordRaw},
         pagination::{PaginatedResponse, PaginationMeta, PaginationQuery},
