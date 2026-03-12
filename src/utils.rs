@@ -43,3 +43,92 @@ pub fn error_chain_fmt(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use actix_web::http::StatusCode;
+    use std::fmt;
+
+    #[test]
+    fn e400_returns_bad_request() {
+        let err = e400("bad input");
+        assert_eq!(
+            err.as_response_error().status_code(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+
+    #[test]
+    fn e500_returns_internal_server_error() {
+        let err = e500("something went wrong");
+        assert_eq!(
+            err.as_response_error().status_code(),
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn see_other_returns_303_with_location_header() {
+        let response = see_other("/new-location");
+        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        assert_eq!(response.headers().get(LOCATION).unwrap(), "/new-location");
+    }
+
+    #[test]
+    fn unauthorized_returns_401() {
+        let response = unauthorized();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // minimal single-level error
+    #[derive(Debug)]
+    struct LeafError;
+
+    impl fmt::Display for LeafError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Leaf error")
+        }
+    }
+
+    impl std::error::Error for LeafError {}
+
+    // multi-level error that chains to LeafError
+    #[derive(Debug)]
+    struct WrapperError(LeafError);
+
+    impl fmt::Display for WrapperError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "Wrapper error: {}", self.0)
+        }
+    }
+
+    impl std::error::Error for WrapperError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.0)
+        }
+    }
+
+    struct ChainDisplay<'a>(&'a dyn std::error::Error);
+
+    impl<'a> fmt::Display for ChainDisplay<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            error_chain_fmt(&self.0, f)
+        }
+    }
+
+    #[test]
+    fn error_chain_fmt_single_error_no_cause() {
+        let e = ChainDisplay(&LeafError);
+        assert!(format!("{}", e).contains("Leaf error"));
+        assert!(!format!("{}", e).contains("Caused by:"));
+    }
+
+    #[test]
+    fn error_chain_fmt_multiple_errors_with_causes() {
+        let e = ChainDisplay(&WrapperError(LeafError));
+        let output = format!("{}", e);
+        assert!(output.contains("Wrapper error: Leaf error"));
+        assert!(output.contains("Caused by:\n\tLeaf error"));
+    }
+}

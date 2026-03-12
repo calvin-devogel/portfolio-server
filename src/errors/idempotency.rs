@@ -23,3 +23,22 @@ impl ResponseError for IdempotencyError {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn correct_status_code() {
+        let e = IdempotencyError::MissingIdempotencyKey;
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+        let e = IdempotencyError::InvalidKeyFormat;
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+        let e = IdempotencyError::RequestInFlight;
+        assert_eq!(e.status_code(), StatusCode::CONFLICT);
+        let e = IdempotencyError::DatabaseError(sqlx::Error::RowNotFound);
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let e = IdempotencyError::UnexpectedError(anyhow::anyhow!("Unexpected error"));
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+}

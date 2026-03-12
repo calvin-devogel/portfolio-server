@@ -32,3 +32,28 @@ impl ResponseError for BlogError {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn correct_status_code() {
+        let e = BlogError::PostNotFound;
+        assert_eq!(e.status_code(), StatusCode::NOT_FOUND);
+        let e = BlogError::DuplicatePost;
+        assert_eq!(e.status_code(), StatusCode::CONFLICT);
+        let e = BlogError::SlugConflict;
+        assert_eq!(e.status_code(), StatusCode::CONFLICT);
+        let e = BlogError::QueryFailed;
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let e = BlogError::UnexpectedError(anyhow::anyhow!("Unexpected error"));
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        let e = BlogError::InvalidContent("Invalid content".to_string());
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+        let e = BlogError::BadRequest(anyhow::anyhow!("Bad request"));
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+        let e = BlogError::ValidationError("Validation failed".to_string());
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+    }
+}

@@ -46,3 +46,28 @@ impl AsRef<str> for IdempotencyKey {
         &self.0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idempotency_key_try_from() {
+        let key = IdempotencyKey::try_from("valid_key".to_string()).unwrap();
+        assert_eq!(key.as_ref(), "valid_key");
+
+        let empty_key = IdempotencyKey::try_from("".to_string());
+        assert!(empty_key.is_err());
+
+        let long_key = "a".repeat(IdempotencyKey::MAX_LENGTH + 1);
+        let long_key_result = IdempotencyKey::try_from(long_key);
+        assert!(long_key_result.is_err());
+    }
+
+    #[test]
+    fn string_from_key() {
+        let key = IdempotencyKey::try_from("another_valid_key".to_string()).unwrap();
+        let s: String = key.into();
+        assert_eq!(s, "another_valid_key");
+    }
+}

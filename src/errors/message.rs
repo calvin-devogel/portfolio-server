@@ -1,6 +1,6 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 struct ErrorMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
@@ -88,5 +88,60 @@ impl ResponseError for MessagePatchError {
             Self::MessageNotFound => StatusCode::NOT_FOUND,
             Self::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn correct_status_code() {
+        let e = ContactSubmissionError::InvalidEmail;
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+        let e = ContactSubmissionError::MessageLength;
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+        let e = ContactSubmissionError::NameLength;
+        assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
+        let e = ContactSubmissionError::RateLimitExceeded;
+        assert_eq!(e.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        let e = ContactSubmissionError::DuplicateMessage;
+        assert_eq!(e.status_code(), StatusCode::CONFLICT);
+        let e = ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error"));
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let e = MessageGetError::TotalCount;
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let e = MessagePatchError::MessageNotFound;
+        assert_eq!(e.status_code(), StatusCode::NOT_FOUND);
+        let e = MessagePatchError::UnexpectedError(anyhow::anyhow!("Unexpected error"));
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn correct_error_message() {
+        let e = ContactSubmissionError::MessageLength;
+        let error_message = e.to_message_error().unwrap();
+        assert_eq!(
+            error_message.message,
+            Some("Message must be between 10 and 5000 characters".to_string())
+        );
+
+        let e = ContactSubmissionError::NameLength;
+        let error_message = e.to_message_error().unwrap();
+        assert_eq!(
+            error_message.message,
+            Some("Name must be between 2 and 100 characters.".to_string())
+        );
+
+        let e = ContactSubmissionError::RateLimitExceeded;
+        assert!(e.to_message_error().is_none());
+
+        let e = ContactSubmissionError::DuplicateMessage;
+        assert!(e.to_message_error().is_none());
+
+        let e = ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error"));
+        assert!(e.to_message_error().is_none());
     }
 }

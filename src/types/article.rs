@@ -97,7 +97,7 @@ impl TryFrom<ArticleRecordRaw> for ArticleRecord {
     type Error = serde_json::Error;
 
     fn try_from(raw: ArticleRecordRaw) -> Result<Self, Self::Error> {
-        ArticleRecord::try_from_row(
+        Self::try_from_row(
             raw.post_id,
             raw.title,
             raw.slug,
@@ -246,5 +246,37 @@ impl ArticleEditRequest {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::types::article::CarouselImage;
+
+    use super::ArticleSection;
+
+    #[test]
+    fn validate_size_limits() {
+        let content_too_large = "a".repeat(20_001);
+
+        let section = ArticleSection::Markdown {
+            content: content_too_large,
+        };
+        assert!(section.validate().is_err());
+
+        let slides: Vec<CarouselImage> = (0..21)
+            .map(|_| CarouselImage {
+                src: "A".to_string(),
+                alt: None,
+                caption: None,
+            })
+            .collect();
+
+        let carousel_section = ArticleSection::Carousel {
+            label: "placeholder".to_string(),
+            slides,
+        };
+
+        assert!(carousel_section.validate().is_err());
     }
 }

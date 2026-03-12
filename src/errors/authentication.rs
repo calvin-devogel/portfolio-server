@@ -19,3 +19,18 @@ impl ResponseError for AuthError {
         }
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn correct_status_code() {
+        let e = AuthError::RateLimitExceeded;
+        assert_eq!(e.status_code(), StatusCode::TOO_MANY_REQUESTS);
+        let e = AuthError::InvalidCredentials(anyhow::anyhow!("e"));
+        assert_eq!(e.status_code(), StatusCode::UNAUTHORIZED);
+        let e = AuthError::UnexpectedError(anyhow::anyhow!("e"));
+        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+}

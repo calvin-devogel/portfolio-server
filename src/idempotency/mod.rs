@@ -3,6 +3,6 @@ mod persistence;
 
 pub use key::IdempotencyKey;
 pub use persistence::{
-    NextAction, execute_idempotent, get_idempotency_key, get_saved_response, save_response,
-    try_processing,
+    NextAction, execute_idempotent, execute_idempotent_with, get_idempotency_key,
+    get_saved_response, save_response, try_processing,
 };

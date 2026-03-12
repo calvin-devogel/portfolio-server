@@ -28,6 +28,12 @@ pub enum NextAction {
 // tries to insert a new row with key + user_id (this will need to change)
 // if the row is able to be inserted -> StartProcessing a transaction
 // if the row already exists -> fetch saved response and return it
+/// as for why (NextAction::StartProcessing, None) is an unreachable state:
+///     - if n_inserted_rows > 0, return (NextAction::StartProcessing, Some(transaction))
+///     - if n_inserted_rows == 0, return *either*
+///         - (NextAction::ReturnSavedResponse(response), None) or
+///         - (IdempotencyError::RequestInFlight)
+/// so no path allows the match statement to find (NextAction, None)
 pub async fn try_processing(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
@@ -55,10 +61,11 @@ pub async fn try_processing(
         Ok((NextAction::StartProcessing, Some(transaction)))
     } else {
         let saved_response = get_saved_response(pool, idempotency_key, user_id, operation).await?;
-        match saved_response {
-            Some(response) => Ok((NextAction::ReturnSavedResponse(response), None)),
-            None => Err(IdempotencyError::RequestInFlight),
-        }
+
+        saved_response.map_or_else(
+            || Err(IdempotencyError::RequestInFlight),
+            |response| Ok((NextAction::ReturnSavedResponse(response), None)),
+        )
     }
 }
 
@@ -143,6 +150,7 @@ pub async fn get_saved_response(
         WHERE
             idempotency_key = $2
             AND operation = $3
+            AND response_status_code IS NOT NULL
             AND (user_id = $1 OR (user_id IS NULL AND $1 IS NULL))
         "#,
         user_id,
@@ -187,7 +195,8 @@ pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, Idem
     Ok(idempotency_key)
 }
 
-// reusable idempotency flow for all handlers that need it
+// wrapper for execute_idempotent_with that calls the default process_fn
+// (try_processing) that all non-test callers will use.
 pub async fn execute_idempotent<F, E>(
     request: &HttpRequest,
     pool: &PgPool,
@@ -198,13 +207,104 @@ where
     F: for<'a> FnOnce(
         &'a mut Transaction<'static, Postgres>,
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
-    E: From<IdempotencyError>,
+    E: From<IdempotencyError> + std::fmt::Debug,
 {
-    let key = get_idempotency_key(&request.clone()).map_err(E::from)?;
+    execute_idempotent_with(request, pool, user_id, action, |pool, key, user_id, op| {
+        Box::pin(async move {
+            try_processing(pool, key, user_id, op)
+                .await
+                .map_err(|e| E::from(e))
+        })
+    })
+    .await
+}
+
+/// jesus what a mess
+/// Here's what's happening in this signature: since there are multiple different endpoints that require
+/// idempotency, the flow for idempotent actions needs to be both reusable, and able to accept
+/// generic actions (`action: F`), and in order to test all paths in the match statement, we need to be
+/// able to mock process_fn in a way that allows us to return NextAction::StartProcessing
+/// accompanied by a missing transaction operation, since otherwise, that state is unreachable.
+/// (see try_processing for why that's a practically unreachable state)
+/// So, from top to bottom: execute_idempotent_with is a function that takes as parameters:
+///     - a reference to an HTTP request (this is where the actual data inserted/edited/etc. comes from)
+///     - a reference to the Postgres connection pool
+///     - an optional user_id depending on whether or not the action is anonymous
+///     - an arbitrary `action: F` that:
+///         - is valid for all possible lifetimes 'a
+///         - is executed a single time inside the idempotency pipeline
+///         - returns a pinned, safe-to-poll pointer (valid for 'a) to a dynamically-dispatched future, the output of which:
+///             - is a Result that on success, is an HTTP response
+///             - and on error, is an arbitrary error E
+///         - takes as its parameter: a mutable reference to the active Postgres transaction to
+///           ensure that in addition to being idempotent, this action is also atomic
+///     - a process function `process_fn: P` that:
+///         - is valid for all possible lifetimes 'p
+///         - is executed a single time inside the idempotency pipeline
+///         - returns a pinned, safe-to-poll pointer (also valid for 'p) to a dynamically-dispatched future, the output of which:
+///             - is a Result that on success, is a tuple containing a variant of NextAction and an "optional" Postgres transaction
+///               This right here adds another layer of complexity in the form of the process function. ^
+///               (in practice, this transaction will never be None, but because a hypothetical future refactor *could* make
+///               that state reachable, the match statement needs to account for that, and therefore, so does our testing suite,
+///               thus the mockability requirement)
+///             - and on error, is an arbitrary error E (wrapped in IdempotencyError::UnexpectedError)
+///         - and takes as parameters:
+///             - a reference to the Postgres connection pool
+///             - the idempotency key (a caller-provided user_id + operation-scoped idempotency key)
+///             - an optional user_id (for authenticated/anonymous actions)
+///             - and an operation identifier (ie. "POST:/api/contact")
+/// and returns:
+///     - a Result that on success, is the HTTP response returned by `action`
+///     - and on error, is the generic error E from either `action`, `process` or itself, which must:
+///         - be some variant of IdempotencyError, and implement std::fmt::Debug
+///           (they all do, but Rust wants us to specify that anyway)
+///
+/// State machine: extract idempotency key from request header -> build operation key as `METHOD:PATH` -> ask process_fn what to do next
+///     -> StartProcessing + Some(tx) -> run once, then persist response in the same tx
+///     -> ReturnSavedResponse + _ -> return the cached response immediately
+///     -> StartProcessing + None -> treat as an invariant violation
+///
+/// Problem: prevent business logic side effects on retried requests
+/// Approach: claim idempotency slot, process once in transaction, cache full HTTP response
+/// Rust-Specific Challenge: generic async closures with lifetimes and transactional ownership
+/// Design Choice: injectable process_fn to keep flow reusable and ergonomically-tested
+///
+/// Trade-Offs:
+/// - response body is fully buffered in memory before persistence (?)
+/// - in-flight duplicates returns an error path rather than waiting for the first write completion
+/// - operation scope must include METHOD:PATH to prevent key collisions
+#[doc(hidden)]
+#[allow(clippy::future_not_send)]
+// reusable idempotency flow for all handlers that need it
+pub async fn execute_idempotent_with<F, P, E>(
+    request: &HttpRequest,
+    pool: &PgPool,
+    user_id: Option<Uuid>,
+    action: F,
+    process_fn: P,
+) -> Result<HttpResponse, E>
+where
+    F: for<'a> FnOnce(
+        &'a mut Transaction<'static, Postgres>,
+    ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
+    P: for<'p> FnOnce(
+        &'p PgPool,
+        &'p IdempotencyKey,
+        Option<Uuid>,
+        &'p str, // operation identifier
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<(NextAction, Option<Transaction<'static, Postgres>>), E>>
+                + 'p,
+        >,
+    >,
+    E: From<IdempotencyError> + std::fmt::Debug,
+{
+    let key = get_idempotency_key(request).map_err(E::from)?;
     let operation = format!("{}:{}", request.method().as_str(), request.path());
-    let (next, tx_opt) = try_processing(pool, &key, user_id, &operation)
-        .await
-        .map_err(E::from)?;
+    let (next, tx_opt) = process_fn(pool, &key, user_id, &operation)
+        // propogate error directly from process_fn so we actually know what happened
+        .await?;
 
     match (next, tx_opt) {
         (NextAction::ReturnSavedResponse(saved_response), _) => Ok(saved_response),
@@ -221,5 +321,37 @@ where
         (NextAction::StartProcessing, None) => Err(E::from(IdempotencyError::UnexpectedError(
             anyhow::anyhow!("Missing transaction for StartProcessing"),
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::test::TestRequest;
+
+    #[test]
+    fn get_idempotency_key_valid() {
+        let request = TestRequest::default()
+            .insert_header(("Idempotency-Key", "valid_key"))
+            .to_http_request();
+
+        let key = get_idempotency_key(&request).unwrap();
+        assert_eq!(key.as_ref(), "valid_key");
+    }
+
+    #[test]
+    fn get_idempotency_key_missing() {
+        let request = TestRequest::default().to_http_request();
+        let result = get_idempotency_key(&request);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_idempotency_key_invalid_format() {
+        let request = TestRequest::default()
+            .insert_header(("Idempotency-Key", ""))
+            .to_http_request();
+        let result = get_idempotency_key(&request);
+        assert!(result.is_err());
     }
 }

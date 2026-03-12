@@ -1,0 +1,30 @@
+#!/bin/sh
+RED='\033[31m'
+YELLOW='\033[33m'
+GREEN='\033[32m'
+RESET='\033[0m'
+
+fail() {
+    printf "${RED}✗${RESET} %s failed. Push aborted." "$1" >&2
+    exit 1
+}
+
+printf '\n→ Formatting...\n'
+cargo fmt --check || fail "Formatting"
+
+printf '\n→ Running Clippy...\n'
+cargo clippy -- -D warnings || fail "Clippy"
+
+printf '\n→ Running tests...\n'
+cargo test || fail "Tests"
+
+printf '\n→ Auditing dependencies...\n'
+cargo audit || printf '\n${YELLOW}⚠${RESET} Audit found vulnerabilities (non-blocking).\n' >&2
+
+printf '\n→ Looking for unused dependencies...\n'
+cargo machete || fail "Machete"
+
+printf '\n→ Preparing queries\n'
+cargo sqlx prepare -- --all-targets || fail "Query Prep"
+
+printf '\n${GREEN}✓${RESET} Pre-push checks passed.\n'

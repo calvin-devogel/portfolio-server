@@ -157,3 +157,17 @@ async fn try_to_patch_with_reused_idempotency_key() {
         second_response.status().as_u16()
     );
 }
+
+#[tokio::test]
+async fn patching_nonexistent_message_returns_not_found() {
+    let app = spawn_app().await;
+    app.test_user.login(&app).await;
+
+    let patch_body = MessageToPatch {
+        message_id: Uuid::new_v4(),
+        read: true,
+    };
+
+    let response = app.patch_message(&patch_body).await;
+    assert_eq!(response.status().as_u16(), 404);
+}

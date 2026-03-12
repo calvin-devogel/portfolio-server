@@ -3,7 +3,6 @@ pub mod configuration;
 pub mod crypto;
 pub mod errors;
 pub mod idempotency;
-pub mod pagination;
 pub mod routes;
 pub mod session_state;
 pub mod startup;

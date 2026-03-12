@@ -40,18 +40,28 @@ async fn get_stored_credentials(
     Ok(row)
 }
 
-#[tracing::instrument("Validate credentials", skip(credentials, pool))]
-/// # Errors
-/// shoots off an `AuthError::InvalidCredentials` if the hash for the provided `credentials` cannot be verified
-/// or an `anyhow` error if the `username` doesn't exist in the database
 pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
 ) -> Result<(uuid::Uuid, bool), AuthError> {
+    validate_credentials_with_verifier(credentials, pool, verify_password_hash).await
+}
+
+#[doc(hidden)]
+#[tracing::instrument("Validate credentials", skip(credentials, pool, verify_fn))]
+/// # Errors
+/// shoots off an `AuthError::InvalidCredentials` if the hash for the provided `credentials` cannot be verified
+/// or an `anyhow` error if the `username` doesn't exist in the database
+pub async fn validate_credentials_with_verifier<F>(
+    credentials: Credentials,
+    pool: &PgPool,
+    verify_fn: F,
+) -> Result<(uuid::Uuid, bool), AuthError>
+where
+    F: FnOnce(&SecretString, &SecretString) -> Result<(), AuthError> + Send + 'static, // Trait Bounds!
+{
     let mut user_id = None;
     let mut totp_enabled = false;
-    // this is a made-up hash to prevent timing attacks
-    // thanks clippy what the fuck is this?
     let expected_password_hash =
         if let Some((stored_user_id, stored_password_hash, stored_totp_enabled)) =
             get_stored_credentials(&credentials.username, pool).await?
@@ -60,6 +70,7 @@ pub async fn validate_credentials(
             totp_enabled = stored_totp_enabled;
             stored_password_hash
         } else {
+            // this is a made-up hash to prevent timing attacks
             SecretString::new(
                 "$argon2id$v=19$m=19456,t=2,p=1$\
                 gZiV/M1gPc22ElAH/Jh1Hw$\
@@ -68,17 +79,15 @@ pub async fn validate_credentials(
             )
         };
 
-    spawn_blocking_with_tracing(move || {
-        verify_password_hash(&expected_password_hash, &credentials.password)
-    })
-    .await
-    .context("Failed to spawn blocking task.")??;
+    spawn_blocking_with_tracing(move || verify_fn(&expected_password_hash, &credentials.password))
+        .await
+        .context("Failed to spawn blocking task.")??;
 
     // only set to Some if we find stored credentials
     // so even if the default password ends up matching (somehow)
     // we never authenticate a non-existent user.
     user_id
-        .ok_or_else(|| anyhow::anyhow!("Unknown username."))
+        .ok_or_else(|| anyhow::anyhow!("Unknown username"))
         .map_err(AuthError::InvalidCredentials)
         .map(|id| (id, totp_enabled))
 }
@@ -113,7 +122,7 @@ pub async fn change_password(
 ) -> Result<(), anyhow::Error> {
     let password_hash = spawn_blocking_with_tracing(move || compute_password_hash(&password))
         .await?
-        .context("Failed to hash password.")?;
+        .context("Failed to compute password hash")?;
 
     sqlx::query!(
         r#"
@@ -132,6 +141,9 @@ pub async fn change_password(
 
 fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
     let salt = SaltString::generate(&mut OsRng);
+    // expect is acceptable here because password hashing should never fail
+    // if Argon2 is configured and working properly, and we aren't testing Argon2
+    // so there's no reason to propogate this error
     let password_hash = Argon2::new(
         Algorithm::Argon2id,
         Version::V0x13,
@@ -140,4 +152,24 @@ fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow
     .hash_password(password.expose_secret().as_bytes(), &salt)?
     .to_string();
     Ok(SecretString::new(Box::from(password_hash)))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn verify_password_hash_gives_correct_context() {
+        let fake_expected_password_hash = SecretString::new("improperly_formatted_hash".into());
+        let fake_password_candidate = SecretString::new("fake_candidate".into());
+
+        let result = verify_password_hash(&fake_expected_password_hash, &fake_password_candidate);
+
+        let e = result.unwrap_err();
+
+        assert!(
+            e.to_string()
+                .contains("Failed to parse hash in PHC string format.")
+        );
+    }
 }

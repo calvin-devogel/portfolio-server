@@ -37,7 +37,9 @@ pub async fn verify_totp(
     let encrypted = get_totp_secret(user_id, &pool)
         .await
         .map_err(e500)?
-        .ok_or_else(|| actix_web::error::ErrorUnauthorized("TOTP not configured for user"))?;
+        .ok_or_else(|| {
+            actix_web::error::ErrorUnauthorized("TOTP not configured for user: {user_id}")
+        })?;
 
     let totp_secret =
         String::from_utf8(crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?)
@@ -56,9 +58,7 @@ pub async fn verify_totp(
 
     if totp.check_current(&request.code).map_err(e500)? {
         session.clear_mfa_pending();
-        session
-            .insert_user_id(user_id)
-            .map_err(|e| e500(anyhow::anyhow!(e)))?;
+        session.insert_user_id(user_id).map_err(e500)?;
         Ok(HttpResponse::Ok().finish())
     } else {
         Ok(HttpResponse::Unauthorized().finish())

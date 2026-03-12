@@ -1,7 +1,11 @@
 use crate::helpers::spawn_app;
 use actix_web::HttpResponse;
-use portfolio_server::idempotency::{
-    IdempotencyKey, NextAction, get_saved_response, save_response, try_processing,
+use portfolio_server::{
+    errors::IdempotencyError::{self, RequestInFlight},
+    idempotency::{
+        IdempotencyKey, NextAction, execute_idempotent_with, get_saved_response, save_response,
+        try_processing,
+    },
 };
 use uuid::Uuid;
 
@@ -224,4 +228,70 @@ async fn same_key_different_operations_dont_interfere() {
         "Same key under a different operation should start fresh"
     );
     assert!(tx2.is_some());
+}
+
+#[tokio::test]
+async fn try_processing_returns_request_in_flight_when_response_not_yet_saved() {
+    let app = spawn_app().await;
+    let key = IdempotencyKey::try_from("in-flight-key".to_string()).unwrap();
+
+    // seed committed row with no response
+    sqlx::query!(
+        "INSERT INTO idempotency (user_id, idempotency_key, operation, created_at)
+        VALUES (NULL, $1, $2, now())",
+        key.as_ref(),
+        ANONYMOUS_OPERATION
+    )
+    .execute(&app.db_pool)
+    .await
+    .expect("Failed to seed in-flight request");
+
+    let result = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION).await;
+    assert!(matches!(result, Err(RequestInFlight)));
+}
+
+#[tokio::test]
+async fn missing_transaction_operation_is_handled() {
+    let app = spawn_app().await;
+
+    let request = actix_web::test::TestRequest::post()
+        .uri("/api/contact")
+        .insert_header(("Idempotency-Key", "missing-tx-key"))
+        .to_http_request();
+
+    let result: Result<HttpResponse, IdempotencyError> = execute_idempotent_with(
+        &request,
+        &app.db_pool,
+        None,
+        |_tx| Box::pin(async { Ok(HttpResponse::Ok().finish()) }),
+        |_, _, _, _| Box::pin(async { Ok((NextAction::StartProcessing, None)) }),
+    )
+    .await;
+
+    assert!(matches!(result, Err(IdempotencyError::UnexpectedError(_))));
+}
+
+#[tokio::test]
+async fn process_fn_error_is_handled() {
+    let app = spawn_app().await;
+
+    let request = actix_web::test::TestRequest::post()
+        .uri("/api/contact")
+        .insert_header(("Idempotency-Key", "error-key"))
+        .to_http_request();
+
+    let result: Result<HttpResponse, IdempotencyError> = execute_idempotent_with(
+        &request,
+        &app.db_pool,
+        None,
+        |_tx| Box::pin(async { Ok(HttpResponse::Ok().finish()) }),
+        |_, _, _, _| Box::pin(async { Err(IdempotencyError::RequestInFlight) }),
+    )
+    .await;
+
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err(),
+        IdempotencyError::RequestInFlight
+    ));
 }

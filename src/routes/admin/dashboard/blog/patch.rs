@@ -64,12 +64,10 @@ async fn process_edit_article(
 
     if builder
         .sql()
-        .contains(r#"UPDATE blog_posts SET , updated_at = NOW() WHERE post_id = "#)
+        .contains("UPDATE blog_posts SET , updated_at = NOW() WHERE post_id = ")
     {
         tracing::warn!("No fields to update for post {}", post_id);
-        return Err(
-            BlogError::UnexpectedError(anyhow::anyhow!("No fields provided to update")).into(),
-        );
+        return Err(BlogError::BadRequest(anyhow::anyhow!("No fields provided to update")).into());
     }
 
     let result = builder

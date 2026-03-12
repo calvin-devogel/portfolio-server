@@ -2,6 +2,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde_aux::field_attributes::deserialize_number_from_string;
 use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
+#[derive(Debug)]
 pub enum Environment {
     Local,
     Production,
@@ -146,6 +147,9 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
         .expect("Failed to parse APP_ENVIRONMENT");
 
     let environment_filename = format!("{}.yaml", environment.as_str());
+
+    // A panic here is acceptable. Like the session middleware, the config is a critical
+    // component and if it's not configured correctly, the app shouldn't start at all
     let settings = config::Config::builder()
         .add_source(config::File::from(
             configuration_directory.join("base.yaml"),
@@ -161,4 +165,79 @@ pub fn get_configuration() -> Result<Settings, config::ConfigError> {
         .build()?;
 
     settings.try_deserialize::<Settings>()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn env_as_str() {
+        assert_eq!(Environment::Local.as_str(), "local");
+        assert_eq!(Environment::Production.as_str(), "production");
+    }
+
+    #[test]
+    fn env_try_from() {
+        assert_eq!(
+            Environment::try_from("local".to_string()).unwrap().as_str(),
+            "local"
+        );
+        assert_eq!(
+            Environment::try_from("production".to_string())
+                .unwrap()
+                .as_str(),
+            "production"
+        );
+
+        assert_eq!(
+            Environment::try_from("LOCAL".to_string()).unwrap().as_str(),
+            "local"
+        );
+        assert_eq!(
+            Environment::try_from("PRODUCTION".to_string())
+                .unwrap()
+                .as_str(),
+            "production"
+        );
+
+        let e = Environment::try_from("invalid_env".to_string()).unwrap_err();
+        assert!(e.contains("invalid_env"));
+        assert!(e.contains("local") && e.contains("production"));
+    }
+
+    #[test]
+    fn rate_limit_default() {
+        let rate_limit = RateLimitSettings::default();
+        assert_eq!(
+            rate_limit.message.max_messages,
+            default_message_rate_limit().max_messages
+        );
+        assert_eq!(
+            rate_limit.message.window_minutes,
+            default_message_rate_limit().window_minutes
+        );
+    }
+
+    #[test]
+    fn db_ssl_settings() {
+        let dummy_db_settings = DatabaseSettings {
+            username: "test".to_string(),
+            password: SecretString::new("test".into()),
+            port: 2000,
+            host: "test".to_string(),
+            database_name: "test".to_string(),
+            require_ssl: true,
+        };
+
+        let connect_options = dummy_db_settings.connect_options();
+        assert!(format!("{connect_options:?}").contains("Require"));
+
+        let connect_options_no_ssl = DatabaseSettings {
+            require_ssl: false,
+            ..dummy_db_settings
+        }
+        .connect_options();
+        assert!(format!("{connect_options_no_ssl:?}").contains("Prefer"));
+    }
 }
