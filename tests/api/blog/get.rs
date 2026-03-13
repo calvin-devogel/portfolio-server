@@ -112,5 +112,5 @@ async fn blogs_can_be_filtered_on_slug() {
 
     assert_eq!(get_response.data.len(), 1);
     let article = &get_response.data[0];
-    assert_eq!(article.excerpt, "fake post...");
+    assert_eq!(article.excerpt, "unpublished...");
 }
