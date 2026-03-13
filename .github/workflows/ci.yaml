@@ -112,7 +112,11 @@ jobs:
                 token: ${{ secrets.DO_API_TOKEN }}
             
             - name: Log in to DOCR
-              run: doctl registry login --expiry-seconds 600
+              uses: docker/login-action@v3
+              with:
+                registry: registry.digitalocean.com
+                username: ${{ secrets.DO_API_TOKEN }}
+                password: ${{ secrets.DO_API_TOKEN }}
             
             - uses: docker/build-push-action@v6
               with:
