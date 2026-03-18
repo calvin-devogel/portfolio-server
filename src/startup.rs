@@ -42,6 +42,9 @@ pub struct HmacSecret(pub SecretString);
 #[derive(Clone)]
 pub struct TotpEncryptionKey(pub [u8; 32]);
 
+#[derive(Clone)]
+pub struct JwtPrivateKey(pub SecretString);
+
 // wrapper for application url
 pub struct ApplicationBaseUrl(pub String);
 
@@ -122,6 +125,7 @@ impl Application {
             configuration.application.base_url,
             configuration.application.hmac_secret,
             totp_key,
+            JwtPrivateKey(configuration.application.jwt_private_key),
             configuration.redis_uri,
             util_config,
         )
@@ -160,6 +164,7 @@ async fn run(
     base_url: String,
     hmac_secret: SecretString,
     totp_encryption_key: TotpEncryptionKey,
+    jwt_private_key: JwtPrivateKey,
     redis_uri: SecretString,
     util_config: UtilConfig,
 ) -> Result<Server, anyhow::Error> {
@@ -286,6 +291,7 @@ async fn run(
             .app_data(Data::new(HmacSecret(hmac_secret.clone())))
             .app_data(Data::new(util_config.rate.message.clone()))
             .app_data(Data::new(totp_encryption_key.clone()))
+            .app_data(Data::new(jwt_private_key.clone()))
     })
     .listen(listener)?
     .run();
