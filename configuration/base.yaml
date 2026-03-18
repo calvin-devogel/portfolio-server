@@ -8,7 +8,7 @@ application:
   # ok in hindsight, it's still probably a bad idea to expose secrets like this,
   # even if they aren't the ones I'll actually use in production, so this will
   # just be a path to the .pem now
-  jwt_private_key: "./jwt_ec_private.pem"
+  jwt_private_key_path: "./jwt_ec_private.pem"
 database:
   host: "localhost"
   port: 5432
