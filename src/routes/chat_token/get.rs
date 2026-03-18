@@ -2,11 +2,7 @@ use actix_web::{HttpResponse, web};
 use jsonwebtoken::{EncodingKey, Header, encode};
 use secrecy::ExposeSecret;
 
-use crate::{
-    authentication::UserId,
-    startup::HmacSecret,
-    utils::e500,
-};
+use crate::{authentication::UserId, startup::HmacSecret, utils::e500};
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ChatClaims {

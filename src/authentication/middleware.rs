@@ -2,13 +2,13 @@ use actix_web::{
     FromRequest, HttpMessage,
     body::MessageBody,
     cookie::{Cookie, SameSite},
-    dev::{ServiceRequest, ServiceResponse, Payload},
+    dev::{Payload, ServiceRequest, ServiceResponse},
     error::InternalError,
     http::Method,
     middleware::Next,
 };
-use std::ops::Deref;
 use std::future::{Ready, ready};
+use std::ops::Deref;
 use uuid::Uuid;
 
 use crate::session_state::TypedSession;
@@ -40,7 +40,7 @@ impl FromRequest for UserId {
             req.extensions()
                 .get::<UserId>()
                 .copied()
-                .ok_or_else(|| actix_web::error::ErrorUnauthorized("Not Authenticated"))
+                .ok_or_else(|| actix_web::error::ErrorUnauthorized("Not Authenticated")),
         )
     }
 }
