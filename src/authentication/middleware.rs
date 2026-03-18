@@ -2,11 +2,12 @@ use actix_web::{
     FromRequest, HttpMessage,
     body::MessageBody,
     cookie::{Cookie, SameSite},
-    dev::{ServiceRequest, ServiceResponse},
+    dev::{Payload, ServiceRequest, ServiceResponse},
     error::InternalError,
     http::Method,
     middleware::Next,
 };
+use std::future::{Ready, ready};
 use std::ops::Deref;
 use uuid::Uuid;
 
@@ -27,6 +28,20 @@ impl Deref for UserId {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl FromRequest for UserId {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(req: &actix_web::HttpRequest, _: &mut Payload) -> Self::Future {
+        ready(
+            req.extensions()
+                .get::<UserId>()
+                .copied()
+                .ok_or_else(|| actix_web::error::ErrorUnauthorized("Not Authenticated")),
+        )
     }
 }
 
