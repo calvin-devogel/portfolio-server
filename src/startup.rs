@@ -120,7 +120,7 @@ impl Application {
         let secrets_config = SecretsConfig {
             hmac: hmac_key,
             totp: totp_key,
-            jwt: jwt_private_key
+            jwt: jwt_private_key,
         };
 
         let listener = TcpListener::bind(&address).map_err(|e| {
