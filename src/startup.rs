@@ -24,7 +24,7 @@ use crate::{
     routes::{
         check_auth, delete_article, edit_article, get_articles, get_messages, health_check,
         insert_article, login, logout, patch_message, post_message, publish_article, root,
-        totp_confirm, totp_disable, totp_setup, totp_status, verify_totp,
+        totp_confirm, totp_disable, totp_setup, totp_status, verify_totp, chat_token
     },
 };
 
@@ -233,6 +233,12 @@ async fn run(
                     .route("/check_auth", web::get().to(check_auth))
                     .route("/contact", web::post().to(post_message))
                     .route("/blog", web::get().to(get_articles))
+                    .service(
+                        web::scope("/chat_token")
+                            .wrap(from_fn(reject_anonymous_users))
+                            // UserId needs to implement FromRequest?
+                            .route("", web::get().to(chat_token))
+                    )
                     .service(
                         web::scope("/admin")
                             .app_data(web::JsonConfig::default().limit(65_536).error_handler(
