@@ -35,6 +35,13 @@ struct UtilConfig {
     ttl: TtlSettings,
 }
 
+#[derive(Clone)]
+struct SecretsConfig {
+    hmac: HmacSecret,
+    totp: TotpEncryptionKey,
+    jwt: JwtPrivateKey,
+}
+
 // wrapper type for SecretString
 #[derive(Clone)]
 pub struct HmacSecret(pub SecretString);
@@ -94,6 +101,7 @@ impl Application {
             ttl: configuration.ttl,
         };
 
+        let hmac_key = HmacSecret(configuration.application.hmac_secret);
         let raw_totp_key = configuration
             .application
             .totp_encryption_key
@@ -107,6 +115,13 @@ impl Application {
             anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes")
         })?;
         let totp_key = TotpEncryptionKey(key);
+        let jwt_private_key = JwtPrivateKey(configuration.application.jwt_private_key);
+
+        let secrets_config = SecretsConfig {
+            hmac: hmac_key,
+            totp: totp_key,
+            jwt: jwt_private_key
+        };
 
         let listener = TcpListener::bind(&address).map_err(|e| {
             tracing::error!(
@@ -123,9 +138,7 @@ impl Application {
             listener,
             connection_pool,
             configuration.application.base_url,
-            configuration.application.hmac_secret,
-            totp_key,
-            JwtPrivateKey(configuration.application.jwt_private_key),
+            secrets_config,
             configuration.redis_uri,
             util_config,
         )
@@ -162,15 +175,13 @@ async fn run(
     listener: TcpListener,
     db_pool: PgPool,
     base_url: String,
-    hmac_secret: SecretString,
-    totp_encryption_key: TotpEncryptionKey,
-    jwt_private_key: JwtPrivateKey,
+    secrets: SecretsConfig,
     redis_uri: SecretString,
     util_config: UtilConfig,
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
-    let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
+    let secret_key = Key::from(secrets.hmac.0.expose_secret().as_bytes());
     let message_store = CookieMessageStore::builder(secret_key.clone())
         .same_site(SameSite::Strict)
         .build();
@@ -288,10 +299,10 @@ async fn run(
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
-            .app_data(Data::new(HmacSecret(hmac_secret.clone())))
+            .app_data(Data::new(secrets.hmac.clone()))
             .app_data(Data::new(util_config.rate.message.clone()))
-            .app_data(Data::new(totp_encryption_key.clone()))
-            .app_data(Data::new(jwt_private_key.clone()))
+            .app_data(Data::new(secrets.totp.clone()))
+            .app_data(Data::new(secrets.jwt.clone()))
     })
     .listen(listener)?
     .run();
