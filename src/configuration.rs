@@ -52,7 +52,7 @@ pub struct ApplicationSettings {
     pub base_url: String,
     pub hmac_secret: SecretString,
     pub totp_encryption_key: SecretString,
-    pub jwt_private_key: SecretString,
+    pub jwt_private_key_path: String,
 }
 
 #[derive(serde::Deserialize, Clone)]

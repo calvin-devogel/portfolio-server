@@ -5,13 +5,10 @@ application:
   hmac_secret: "long-and-very-secret-random-key-needed-to-verify-message-integrity"
   # also a fake secret, provided at runtime
   totp_encryption_key: "f2e4f32183efde11831c64557303bf22"
-  # another fake secret (the private/public pair will be different in prod)
-  jwt_private_key: |
-    "-----BEGIN EC PRIVATE KEY-----
-    MHcCAQEEICi2X4lWGoKliSalgysPfdODVzyxAwCt0Id/eWGNDMXpoAoGCCqGSM49
-    AwEHoUQDQgAErLGyjNM+GSohRxJE6dp9hEuhC9oUjY6I/y3J6afZx3nTSFOCia2D
-    kCCfJ0YismcsHWJf6opIZIDEZ6+UnHcAxQ==
-    -----END EC PRIVATE KEY-----"
+  # ok in hindsight, it's still probably a bad idea to expose secrets like this,
+  # even if they aren't the ones I'll actually use in production, so this will
+  # just be a path to the .pem now
+  jwt_private_key: "./jwt_ec_private.pem"
 database:
   host: "localhost"
   port: 5432
