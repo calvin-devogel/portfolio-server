@@ -58,4 +58,4 @@ email_address = "0.2.9"
 serde_json = "1.0.61"
 totp-rs = { version = "5.7", features = ["gen_secret", "qr", "serde_support", "zeroize"] }
 aes-gcm = "0.10"
-jsonwebtoken = { version = "10.3.0", features = ["use_pem"]}
+jsonwebtoken = { version = "10.3.0", features = ["use_pem", "aws_lc_rs"]}
