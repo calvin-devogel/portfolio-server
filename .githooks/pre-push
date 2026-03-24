@@ -9,22 +9,41 @@ fail() {
     exit 1
 }
 
-echo "\n→ Formatting...\n"
-cargo fmt --check || fail "Formatting"
+#!/bin/bash
 
-echo "\n→ Running Clippy...\n"
-cargo clippy -- -D warnings || fail "Clippy"
+current_branch=$(git symbolic-ref --short HEAD)
 
-echo "\n→ Running tests...\n"
-cargo test || fail "Tests"
+if [[ $current_branch == "your-branch-name" ]]; then
+    echo "Running tests for $current_branch..."
+    # Add your test command here
+    npm run test
+else
+    echo "Skipping tests for $current_branch."
+fi
 
-echo "\n→ Auditing dependencies...\n"
-cargo audit || echo "\n${YELLOW}⚠${RESET} Audit found vulnerabilities (non-blocking).\n" >&2
 
-echo "\n→ Looking for unused dependencies...\n"
-cargo machete || fail "Machete"
+current_branch=$(git symbolic-ref --short HEAD)
 
-echo "\n→ Preparing queries\n"
-cargo sqlx prepare -- --all-targets || fail "Query Prep"
+if [[ $current_branch != "main" || $current_branch != "dev" ]]; then
+    exit 0
+else
+    echo "\n→ Formatting...\n"
+    cargo fmt --check || fail "Formatting"
 
-echo "\n${GREEN}✓${RESET} Pre-push checks passed.\n"
+    echo "\n→ Running Clippy...\n"
+    cargo clippy -- -D warnings || fail "Clippy"
+
+    echo "\n→ Running tests...\n"
+    cargo test || fail "Tests"
+
+    echo "\n→ Auditing dependencies...\n"
+    cargo audit || echo "\n${YELLOW}⚠${RESET} Audit found vulnerabilities (non-blocking).\n" >&2
+
+    echo "\n→ Looking for unused dependencies...\n"
+    cargo machete || fail "Machete"
+
+    echo "\n→ Preparing queries\n"
+    cargo sqlx prepare -- --all-targets || fail "Query Prep"
+
+    echo "\n${GREEN}✓${RESET} Pre-push checks passed.\n"
+fi

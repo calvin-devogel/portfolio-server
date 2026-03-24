@@ -390,6 +390,46 @@ impl TestApp {
             .await
             .expect("Failed to execute request")
     }
+
+    pub async fn post_create_user<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/api/admin/new_user", &self.address))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn post_change_password<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/api/admin/change_password", &self.address))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn get_user_names(&self, username: Option<String>) -> reqwest::Response {
+        let mut header_map = HeaderMap::new();
+        if username.is_some() {
+            header_map.insert("UserName", username.unwrap().parse().unwrap());
+        }
+
+        self.api_client
+            .get(&format!("{}/api/admin/users", &self.address))
+            .headers(header_map)
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
 }
 
 pub async fn spawn_app() -> TestApp {

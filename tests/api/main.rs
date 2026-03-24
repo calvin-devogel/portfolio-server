@@ -10,3 +10,4 @@ mod logout;
 mod messages;
 mod totp;
 mod totp_admin;
+mod create_user;
