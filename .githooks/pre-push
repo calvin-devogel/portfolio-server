@@ -24,7 +24,7 @@ fi
 
 current_branch=$(git symbolic-ref --short HEAD)
 
-if [[ $current_branch != "main" || $current_branch != "dev" ]]; then
+if [[ $current_branch != "main" && $current_branch != "dev" ]]; then
     exit 0
 else
     echo "\n→ Formatting...\n"
