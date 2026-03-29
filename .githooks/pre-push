@@ -9,19 +9,6 @@ fail() {
     exit 1
 }
 
-#!/bin/bash
-
-current_branch=$(git symbolic-ref --short HEAD)
-
-if [[ $current_branch == "your-branch-name" ]]; then
-    echo "Running tests for $current_branch..."
-    # Add your test command here
-    npm run test
-else
-    echo "Skipping tests for $current_branch."
-fi
-
-
 current_branch=$(git symbolic-ref --short HEAD)
 
 if [[ $current_branch != "main" && $current_branch != "dev" ]]; then
