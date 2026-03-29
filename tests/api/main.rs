@@ -11,3 +11,4 @@ mod messages;
 mod totp;
 mod totp_admin;
 mod create_user;
+mod chat_token;

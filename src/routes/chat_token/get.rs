@@ -48,7 +48,6 @@ pub async fn chat_token(
     let pem = jwt_key.0.expose_secret();
     tracing::info!(
         pem_len = pem.len(),
-        raw_key = pem,
         "Attempting to parse JWT private key"
     );
 
