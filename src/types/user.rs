@@ -6,17 +6,19 @@ pub enum UserActionType {
     DeleteUser,
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug, serde::Serialize)]
 pub enum UserRole {
     Admin,
+    User,
     ChatUser
 }
 
 impl UserRole {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
-            "Admin" => Some(UserRole::Admin),
-            "ChatUser" => Some(UserRole::ChatUser),
+            "admin" => Some(UserRole::Admin),
+            "user" => Some(UserRole::User),
+            "chat_user" => Some(UserRole::ChatUser),
             _ => None,
         }
     }
@@ -25,8 +27,9 @@ impl UserRole {
 impl ToString for UserRole {
     fn to_string(&self) -> String {
         match self {
-            UserRole::Admin => "Admin".to_string(),
-            UserRole::ChatUser => "ChatUser".to_string(),
+            UserRole::Admin => "admin".to_string(),
+            UserRole::User => "user".to_string(),
+            UserRole::ChatUser => "chat_user".to_string(),
         }
     }
 }

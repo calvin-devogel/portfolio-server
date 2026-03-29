@@ -32,7 +32,7 @@ pub async fn login(
     tracing::Span::current().record("username", tracing::field::display(&credentials.username));
 
     match validate_credentials(credentials, &pool).await {
-        Ok((user_id, totp_enabled)) => {
+        Ok((user_id, totp_enabled, user_role)) => {
             tracing::Span::current().record("user_id", tracing::field::display(&user_id));
             session.renew();
 
@@ -46,6 +46,9 @@ pub async fn login(
             } else {
                 session
                     .insert_user_id(user_id)
+                    .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
+                session
+                    .insert_user_role(user_role)
                     .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
                 Ok(HttpResponse::Ok().finish())
             }

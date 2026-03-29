@@ -8,6 +8,7 @@ use sqlx::PgPool;
 
 use crate::errors::AuthError;
 use crate::telemetry::spawn_blocking_with_tracing;
+use crate::types::user::UserRole;
 
 pub struct Credentials {
     pub username: String,
@@ -18,10 +19,10 @@ pub struct Credentials {
 async fn get_stored_credentials(
     username: &str,
     pool: &PgPool,
-) -> Result<Option<(uuid::Uuid, SecretString, bool)>, anyhow::Error> {
+) -> Result<Option<(uuid::Uuid, SecretString, bool, UserRole)>, anyhow::Error> {
     let row = sqlx::query!(
         r#"
-        SELECT user_id, password_hash, totp_enabled
+        SELECT user_id, password_hash, totp_enabled, role::TEXT
         FROM users
         WHERE username = $1
         "#,
@@ -35,6 +36,7 @@ async fn get_stored_credentials(
             row.user_id,
             SecretString::new(row.password_hash.into()),
             row.totp_enabled,
+            UserRole::from_str(&row.role.unwrap_or_else(|| "User".to_string())).unwrap_or(UserRole::User),
         )
     });
     Ok(row)
@@ -43,7 +45,7 @@ async fn get_stored_credentials(
 pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
-) -> Result<(uuid::Uuid, bool), AuthError> {
+) -> Result<(uuid::Uuid, bool, UserRole), AuthError> {
     validate_credentials_with_verifier(credentials, pool, verify_password_hash).await
 }
 
@@ -56,18 +58,20 @@ pub async fn validate_credentials_with_verifier<F>(
     credentials: Credentials,
     pool: &PgPool,
     verify_fn: F,
-) -> Result<(uuid::Uuid, bool), AuthError>
+) -> Result<(uuid::Uuid, bool, UserRole), AuthError>
 where
     F: FnOnce(&SecretString, &SecretString) -> Result<(), AuthError> + Send + 'static, // Trait Bounds!
 {
     let mut user_id = None;
     let mut totp_enabled = false;
+    let mut user_role = UserRole::User;
     let expected_password_hash =
-        if let Some((stored_user_id, stored_password_hash, stored_totp_enabled)) =
+        if let Some((stored_user_id, stored_password_hash, stored_totp_enabled, stored_user_role)) =
             get_stored_credentials(&credentials.username, pool).await?
         {
             user_id = Some(stored_user_id);
             totp_enabled = stored_totp_enabled;
+            user_role = stored_user_role;
             stored_password_hash
         } else {
             // this is a made-up hash to prevent timing attacks
@@ -89,7 +93,7 @@ where
     user_id
         .ok_or_else(|| anyhow::anyhow!("Unknown username"))
         .map_err(AuthError::InvalidCredentials)
-        .map(|id| (id, totp_enabled))
+        .map(|id| (id, totp_enabled, user_role))
 }
 
 #[tracing::instrument(

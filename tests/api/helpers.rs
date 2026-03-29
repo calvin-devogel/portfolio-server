@@ -14,6 +14,7 @@ use portfolio_server::{
     configuration::{DatabaseSettings, get_configuration},
     startup::{Application, get_connection_pool},
     telemetry::{get_subscriber, init_subscriber},
+    types::user::UserRole,
 };
 
 // ensure the `tracing` task is only initialized once using `LazyLock`
@@ -87,6 +88,7 @@ pub struct TestUser {
     pub user_id: Uuid,
     pub username: String,
     pub password: String,
+    pub user_role: UserRole,
 }
 
 impl TestUser {
@@ -95,6 +97,7 @@ impl TestUser {
             user_id: Uuid::new_v4(),
             username: Uuid::new_v4().to_string(),
             password: Uuid::new_v4().to_string(),
+            user_role: UserRole::Admin,
         }
     }
 
@@ -531,5 +534,6 @@ pub fn _seed_user(username: String, password: SecretString) -> TestUser {
         user_id: Uuid::new_v4(),
         username,
         password: password_hash,
+        user_role: UserRole::Admin,
     }
 }
