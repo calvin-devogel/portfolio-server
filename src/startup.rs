@@ -19,7 +19,7 @@ use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
-    authentication::{cross_site_request_forgery_protection, reject_anonymous_users},
+    authentication::{cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin},
     configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
         chat_token, check_auth, delete_article, edit_article, get_articles, get_messages,
@@ -293,6 +293,7 @@ async fn run(
                                     .max_age(util_config.cors.max_age)
                             })
                             .wrap(from_fn(reject_anonymous_users))
+                            .wrap(from_fn(reject_non_admin))
                             .route("/messages", web::get().to(get_messages))
                             .route("/messages", web::patch().to(patch_message))
                             .route("/blog/post", web::post().to(insert_article))
