@@ -11,8 +11,8 @@ use totp_rs::{Algorithm, Secret, TOTP};
 
 use crate::session_state::TypedSession;
 use crate::startup::TotpEncryptionKey;
-use crate::utils::e500;
 use crate::types::user::UserRole;
+use crate::utils::e500;
 
 #[derive(serde::Deserialize, Debug)]
 pub struct VerifyTotpRequest {
@@ -79,7 +79,9 @@ async fn get_totp_secret_and_role(
     .await
     .context("Failed to fetch TOTP secret")?;
 
-    let user_role = UserRole::from_str(&row.role.unwrap_or_else(|| "User".to_string()))
+    let user_role = row.role
+        .ok_or_else(|| anyhow::anyhow!("User role not found"))?
+        .parse::<UserRole>()
         .unwrap_or(UserRole::User);
 
     Ok(row.totp_secret.map(|secret| (secret, user_role)))

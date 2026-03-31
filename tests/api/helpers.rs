@@ -448,7 +448,10 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .patch(&format!("{}/api/admin/user_role/{}", &self.address, user_id))
+            .patch(&format!(
+                "{}/api/admin/user_role/{}",
+                &self.address, user_id
+            ))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .form(&body)
             .send()

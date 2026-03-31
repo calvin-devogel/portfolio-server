@@ -46,10 +46,7 @@ pub async fn chat_token(
     };
 
     let pem = jwt_key.0.expose_secret();
-    tracing::info!(
-        pem_len = pem.len(),
-        "Attempting to parse JWT private key"
-    );
+    tracing::info!(pem_len = pem.len(), "Attempting to parse JWT private key");
 
     let key = EncodingKey::from_ec_pem(pem.as_bytes()).map_err(|e| {
         tracing::error!(error = ?e, "EncodingKey::from_ec_pem failed");

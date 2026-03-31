@@ -1,10 +1,8 @@
-use actix_web::{web, HttpRequest, HttpResponse};
-use sqlx::PgPool;
+use crate::{authentication::UserId, idempotency::execute_idempotent, types::user::CreateUser};
+use actix_web::{HttpRequest, HttpResponse, web};
 use rand::{RngExt, distr::Alphanumeric};
-use sha2::{Sha256, Digest};
-use crate::{
-    authentication::UserId, idempotency::execute_idempotent, types::user::CreateUser
-};
+use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 
 #[tracing::instrument(name = "Create user invitation", skip_all)]
 pub async fn create_user(
@@ -15,7 +13,7 @@ pub async fn create_user(
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_to_create = new_user.into_inner();
     let user_id = Some(**user_id);
-    user_to_create.validate().map_err(actix_web::Error::from)?;
+    user_to_create.validate()?;
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
         Box::pin(async move { process_create_new_user(tx, user_to_create).await })

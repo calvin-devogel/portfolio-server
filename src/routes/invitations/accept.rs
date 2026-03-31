@@ -1,8 +1,8 @@
-use actix_web::{web, HttpResponse};
-use sqlx::PgPool;
-use sha2::{Sha256, Digest};
+use crate::authentication::compute_password_hash;
+use actix_web::{HttpResponse, web};
 use secrecy::{ExposeSecret, SecretString};
-use crate::{authentication::compute_password_hash};
+use sha2::{Digest, Sha256};
+use sqlx::PgPool;
 
 #[derive(serde::Deserialize)]
 pub struct AcceptInvitationParams {
@@ -21,7 +21,9 @@ pub async fn accept_invitation(
     let token_hash = hex::encode(hasher.finalize());
 
     // don't need idempotency here since invitation accepts are one-time
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
     let invitation = sqlx::query!(
@@ -67,10 +69,17 @@ pub async fn accept_invitation(
     .map_err(actix_web::error::ErrorInternalServerError)?;
 
     match (insert.rows_affected(), consume.rows_affected()) {
-        (1, 1) => tx.commit().await.map_err(actix_web::error::ErrorInternalServerError)?,
+        (1, 1) => tx
+            .commit()
+            .await
+            .map_err(actix_web::error::ErrorInternalServerError)?,
         _ => {
-            tx.rollback().await.map_err(actix_web::error::ErrorInternalServerError)?;
-            return Err(actix_web::error::ErrorInternalServerError("Failed to create user record"));
+            tx.rollback()
+                .await
+                .map_err(actix_web::error::ErrorInternalServerError)?;
+            return Err(actix_web::error::ErrorInternalServerError(
+                "Failed to create user record",
+            ));
         }
     }
 

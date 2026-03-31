@@ -19,12 +19,15 @@ use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
-    authentication::{cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin},
+    authentication::{
+        cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin,
+    },
     configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
-        chat_token, check_auth, delete_article, edit_article, get_articles, get_messages,
-        health_check, insert_article, login, logout, patch_message, post_message, publish_article,
-        root, totp_confirm, totp_disable, totp_setup, totp_status, verify_totp, create_user, accept_invitation
+        accept_invitation, chat_token, check_auth, create_user, delete_article, edit_article,
+        get_articles, get_messages, health_check, insert_article, login, logout, patch_message,
+        post_message, publish_article, root, totp_confirm, totp_disable, totp_setup, totp_status,
+        verify_totp,
     },
 };
 

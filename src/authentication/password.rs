@@ -36,7 +36,7 @@ async fn get_stored_credentials(
             row.user_id,
             SecretString::new(row.password_hash.into()),
             row.totp_enabled,
-            UserRole::from_str(&row.role.unwrap_or_else(|| "User".to_string())).unwrap_or(UserRole::User),
+            row.role.expect("User role not found").parse::<UserRole>().unwrap_or(UserRole::User),
         )
     });
     Ok(row)
@@ -65,23 +65,26 @@ where
     let mut user_id = None;
     let mut totp_enabled = false;
     let mut user_role = UserRole::User;
-    let expected_password_hash =
-        if let Some((stored_user_id, stored_password_hash, stored_totp_enabled, stored_user_role)) =
-            get_stored_credentials(&credentials.username, pool).await?
-        {
-            user_id = Some(stored_user_id);
-            totp_enabled = stored_totp_enabled;
-            user_role = stored_user_role;
-            stored_password_hash
-        } else {
-            // this is a made-up hash to prevent timing attacks
-            SecretString::new(
-                "$argon2id$v=19$m=19456,t=2,p=1$\
+    let expected_password_hash = if let Some((
+        stored_user_id,
+        stored_password_hash,
+        stored_totp_enabled,
+        stored_user_role,
+    )) = get_stored_credentials(&credentials.username, pool).await?
+    {
+        user_id = Some(stored_user_id);
+        totp_enabled = stored_totp_enabled;
+        user_role = stored_user_role;
+        stored_password_hash
+    } else {
+        // this is a made-up hash to prevent timing attacks
+        SecretString::new(
+            "$argon2id$v=19$m=19456,t=2,p=1$\
                 gZiV/M1gPc22ElAH/Jh1Hw$\
                 CWOrkoo7oJBQ/iyh7uJ0LO2aLEfrHwTWllSAxT0zRno"
-                    .into(),
-            )
-        };
+                .into(),
+        )
+    };
 
     spawn_blocking_with_tracing(move || verify_fn(&expected_password_hash, &credentials.password))
         .await

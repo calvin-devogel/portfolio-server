@@ -49,7 +49,7 @@ impl TypedSession {
     // role should output a role enum
     pub fn get_user_role(&self) -> Result<Option<UserRole>, SessionGetError> {
         match self.0.get::<String>(Self::USER_ROLE_KEY)? {
-            Some(role_str) => Ok(UserRole::from_str(&role_str)),
+            Some(role_str) => Ok(role_str.parse::<UserRole>().ok()),
             None => Ok(None),
         }
     }

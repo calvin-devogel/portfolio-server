@@ -1,5 +1,7 @@
 mod blog;
+mod chat_token;
 mod check_auth;
+mod create_user;
 mod csrf;
 mod health_check;
 mod helpers;
@@ -10,5 +12,3 @@ mod logout;
 mod messages;
 mod totp;
 mod totp_admin;
-mod create_user;
-mod chat_token;

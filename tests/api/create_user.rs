@@ -14,13 +14,25 @@ async fn admin_can_create_invitations_and_they_can_be_accepted() {
     });
 
     let response = app.post_create_user(&new_user).await;
-    assert_eq!(response.status().as_u16(), 200, "Invitation response should be 200 OK");
+    assert_eq!(
+        response.status().as_u16(),
+        200,
+        "Invitation response should be 200 OK"
+    );
 
-    let response_body: serde_json::Value = response.json().await.expect("Response should be valid JSON");
+    let response_body: serde_json::Value = response
+        .json()
+        .await
+        .expect("Response should be valid JSON");
     assert_eq!(response_body["success"], true);
 
-    let link = response_body["link"].as_str().expect("Link should be present");
-    let token = link.split("token=").last().expect("Token should be extractable from link");
+    let link = response_body["link"]
+        .as_str()
+        .expect("Link should be present");
+    let token = link
+        .split("token=")
+        .last()
+        .expect("Token should be extractable from link");
 
     app.post_logout().await;
 
@@ -32,7 +44,11 @@ async fn admin_can_create_invitations_and_they_can_be_accepted() {
     });
 
     let accept_response = app.post_accept_invitation(&accept_payload).await;
-    assert_eq!(accept_response.status().as_u16(), 200, "Accept invitation response should be 200 OK");
+    assert_eq!(
+        accept_response.status().as_u16(),
+        200,
+        "Accept invitation response should be 200 OK"
+    );
 
     // ensure the new user can log in
     let new_user_login = serde_json::json!({
@@ -41,7 +57,11 @@ async fn admin_can_create_invitations_and_they_can_be_accepted() {
     });
 
     let login_response = app.post_login(&new_user_login).await;
-    assert_eq!(login_response.status().as_u16(), 200, "New user should be able to log in after accepting invitation");
+    assert_eq!(
+        login_response.status().as_u16(),
+        200,
+        "New user should be able to log in after accepting invitation"
+    );
 }
 
 #[tokio::test]
@@ -55,8 +75,16 @@ async fn admin_can_change_user_roles() {
     });
 
     let create_response = app.post_create_user(&new_user).await;
-    let create_body: serde_json::Value = create_response.json().await.expect("Response should be valid JSON");
-    let token = create_body["link"].as_str().unwrap().split("token=").last().unwrap();
+    let create_body: serde_json::Value = create_response
+        .json()
+        .await
+        .expect("Response should be valid JSON");
+    let token = create_body["link"]
+        .as_str()
+        .unwrap()
+        .split("token=")
+        .last()
+        .unwrap();
 
     let accept_payload = serde_json::json!({
         "token": token,
@@ -66,13 +94,16 @@ async fn admin_can_change_user_roles() {
 
     app.post_logout().await;
     app.post_accept_invitation(&accept_payload).await;
-    
+
     app.test_user.login(&app).await;
 
-    let user_record = sqlx::query!("SELECT user_id FROM users WHERE username = $1", accept_payload["username"].to_string())
-        .fetch_one(&app.db_pool)
-        .await
-        .expect("Failed to fetch accepted user");
+    let user_record = sqlx::query!(
+        "SELECT user_id FROM users WHERE username = $1",
+        accept_payload["username"].to_string()
+    )
+    .fetch_one(&app.db_pool)
+    .await
+    .expect("Failed to fetch accepted user");
 
     let user_id = user_record.user_id.to_string();
 
@@ -86,7 +117,9 @@ async fn anonymous_users_cannot_change_user_roles() {
     let app = spawn_app().await;
 
     let role_update = serde_json::json!({ "role": "admin" });
-    let response = app.patch_user_role(Uuid::new_v4().to_string().as_str(), &role_update).await;
+    let response = app
+        .patch_user_role(Uuid::new_v4().to_string().as_str(), &role_update)
+        .await;
     assert_eq!(response.status().as_u16(), 401);
 }
 
@@ -128,7 +161,12 @@ async fn used_invitations_cannot_be_reused() {
     });
     let create_response = app.post_create_user(&new_user).await;
     let create_body: serde_json::Value = create_response.json().await.unwrap();
-    let token = create_body["link"].as_str().unwrap().split("token=").last().unwrap();
+    let token = create_body["link"]
+        .as_str()
+        .unwrap()
+        .split("token=")
+        .last()
+        .unwrap();
 
     let accept_payload = serde_json::json!({
         "token": token,
@@ -184,7 +222,13 @@ async fn usernames_can_be_queried() {
 
     let response = app.get_user_names(None).await;
     assert_eq!(response.status().as_u16(), 200);
-    assert!(response.text().await.unwrap().contains(&app.test_user.username));
+    assert!(
+        response
+            .text()
+            .await
+            .unwrap()
+            .contains(&app.test_user.username)
+    );
 }
 
 #[tokio::test]
@@ -200,7 +244,15 @@ async fn users_can_be_queried_by_username() {
     let app = spawn_app().await;
     app.test_user.login(&app).await;
 
-    let response = app.get_user_names(Some(app.test_user.username.clone())).await;
+    let response = app
+        .get_user_names(Some(app.test_user.username.clone()))
+        .await;
     assert_eq!(response.status().as_u16(), 200);
-    assert!(response.text().await.unwrap().contains(&app.test_user.username));
+    assert!(
+        response
+            .text()
+            .await
+            .unwrap()
+            .contains(&app.test_user.username)
+    );
 }

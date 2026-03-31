@@ -1,4 +1,4 @@
-use jsonwebtoken::{dangerous::insecure_decode};
+use jsonwebtoken::dangerous::insecure_decode;
 
 use crate::helpers::spawn_app;
 
@@ -20,7 +20,7 @@ async fn unauthenticated_user_cannot_get_chat_token() {
     let app = spawn_app().await;
 
     let response = app.get_chat_token().await;
-    
+
     assert_eq!(response.status().as_u16(), 401);
 }
 
@@ -56,8 +56,8 @@ async fn chat_token_uses_es256_algorithm() {
     app.test_user.login(&app).await;
 
     let body: ChatTokenResponse = app.get_chat_token().await.json().await.unwrap();
-    let token_data = insecure_decode::<TestClaims>(&body.token)
-        .expect("Failed to decode JWT claims");
+    let token_data =
+        insecure_decode::<TestClaims>(&body.token).expect("Failed to decode JWT claims");
 
     let claims = token_data.claims;
 
@@ -73,13 +73,14 @@ async fn chat_token_expires_within_ten_seconds() {
 
     let before = chrono::Utc::now().timestamp();
     let body: ChatTokenResponse = app.get_chat_token().await.json().await.unwrap();
-    let claims = insecure_decode::<TestClaims>(&body.token)
-        .unwrap()
-        .claims;
+    let claims = insecure_decode::<TestClaims>(&body.token).unwrap().claims;
 
     assert!(claims.exp > before, "token exp is already in the past");
 
     assert!(
         claims.exp <= before + 15,
-        "token exp is too far in the future: {} (expected <= {})", claims.exp, before + 15);
+        "token exp is too far in the future: {} (expected <= {})",
+        claims.exp,
+        before + 15
+    );
 }

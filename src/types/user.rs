@@ -13,26 +13,28 @@ pub enum UserActionType {
 pub enum UserRole {
     Admin,
     User,
-    ChatUser
+    ChatUser,
 }
 
-impl UserRole {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for UserRole {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "admin" => Some(UserRole::Admin),
-            "user" => Some(UserRole::User),
-            "chat_user" => Some(UserRole::ChatUser),
-            _ => None,
+            "admin" => Ok(UserRole::Admin),
+            "user" => Ok(UserRole::User),
+            "chat_user" => Ok(UserRole::ChatUser),
+            _ => Err(()),
         }
     }
 }
 
-impl ToString for UserRole {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for UserRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UserRole::Admin => "admin".to_string(),
-            UserRole::User => "user".to_string(),
-            UserRole::ChatUser => "chat_user".to_string(),
+            UserRole::Admin => write!(f, "admin"),
+            UserRole::User => write!(f, "user"),
+            UserRole::ChatUser => write!(f, "chat_user"),
         }
     }
 }
@@ -57,4 +59,12 @@ pub struct UserActionForm {
     pub action_type: UserActionType,
     pub user_id: Option<String>,
     pub payload: serde_json::Value,
+}
+
+#[derive(serde::Serialize, Debug)]
+pub struct User {
+    pub user_id: String,
+    pub username: String,
+    pub role: String,
+    pub must_change_password: bool,
 }

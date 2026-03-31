@@ -12,8 +12,8 @@ use std::ops::Deref;
 use uuid::Uuid;
 
 use crate::session_state::TypedSession;
-use crate::utils::{e500, unauthorized};
 use crate::types::user::UserRole;
+use crate::utils::{e500, unauthorized};
 
 #[derive(Copy, Clone, Debug)]
 pub struct UserId(Uuid);
@@ -130,7 +130,7 @@ pub async fn cross_site_request_forgery_protection(
 }
 
 pub async fn reject_non_admin(
-    mut request: ServiceRequest, 
+    mut request: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
     let session = {
@@ -140,11 +140,10 @@ pub async fn reject_non_admin(
 
     let session = session.expect("session middleware not configured");
 
-    if let Some(user_role) = session.get_user_role().map_err(e500)? {
-        if user_role == UserRole::Admin {
+    if let Some(user_role) = session.get_user_role().map_err(e500)?
+        && user_role == UserRole::Admin {
             return next.call(request).await;
         }
-    }
 
     let response = unauthorized();
     let e = anyhow::anyhow!("The user is not an admin");
