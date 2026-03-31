@@ -36,7 +36,10 @@ async fn get_stored_credentials(
             row.user_id,
             SecretString::new(row.password_hash.into()),
             row.totp_enabled,
-            row.role.expect("User role not found").parse::<UserRole>().unwrap_or(UserRole::User),
+            row.role
+                .expect("User role not found")
+                .parse::<UserRole>()
+                .unwrap_or(UserRole::User),
         )
     });
     Ok(row)

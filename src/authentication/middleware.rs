@@ -141,9 +141,10 @@ pub async fn reject_non_admin(
     let session = session.expect("session middleware not configured");
 
     if let Some(user_role) = session.get_user_role().map_err(e500)?
-        && user_role == UserRole::Admin {
-            return next.call(request).await;
-        }
+        && user_role == UserRole::Admin
+    {
+        return next.call(request).await;
+    }
 
     let response = unauthorized();
     let e = anyhow::anyhow!("The user is not an admin");

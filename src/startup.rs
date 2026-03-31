@@ -25,9 +25,9 @@ use crate::{
     configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
         accept_invitation, chat_token, check_auth, create_user, delete_article, edit_article,
-        get_articles, get_messages, health_check, insert_article, login, logout, patch_message,
-        post_message, publish_article, root, totp_confirm, totp_disable, totp_setup, totp_status,
-        verify_totp,
+        get_all_users, get_articles, get_messages, health_check, insert_article, login, logout,
+        patch_message, post_message, publish_article, reset_password, root, set_user_role,
+        totp_confirm, totp_disable, totp_setup, totp_status, verify_totp,
     },
 };
 
@@ -299,6 +299,12 @@ async fn run(
                             .wrap(from_fn(reject_anonymous_users))
                             .wrap(from_fn(reject_non_admin))
                             .route("/create_user", web::post().to(create_user))
+                            .route("/users", web::get().to(get_all_users))
+                            .route("/users/{user_id}/role", web::patch().to(set_user_role))
+                            .route(
+                                "/users/{user_id}/reset_password",
+                                web::patch().to(reset_password),
+                            )
                             .route("/messages", web::get().to(get_messages))
                             .route("/messages", web::patch().to(patch_message))
                             .route("/blog/post", web::post().to(insert_article))

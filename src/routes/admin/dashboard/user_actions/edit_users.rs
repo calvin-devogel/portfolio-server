@@ -1,4 +1,4 @@
-use crate::types::user::{UserRole, User};
+use crate::types::user::{User, UserRole};
 use actix_web::{HttpResponse, web};
 use sqlx::PgPool;
 use uuid::Uuid;

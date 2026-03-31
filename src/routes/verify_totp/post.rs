@@ -79,7 +79,8 @@ async fn get_totp_secret_and_role(
     .await
     .context("Failed to fetch TOTP secret")?;
 
-    let user_role = row.role
+    let user_role = row
+        .role
         .ok_or_else(|| anyhow::anyhow!("User role not found"))?
         .parse::<UserRole>()
         .unwrap_or(UserRole::User);
