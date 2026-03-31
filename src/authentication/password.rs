@@ -143,7 +143,7 @@ pub async fn change_password(
     Ok(())
 }
 
-fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
+pub fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
     let salt = SaltString::generate(&mut OsRng);
     // expect is acceptable here because password hashing should never fail
     // if Argon2 is configured and working properly, and we aren't testing Argon2

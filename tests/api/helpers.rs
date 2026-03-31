@@ -399,9 +399,10 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .post(&format!("{}/api/admin/new_user", &self.address))
+            .post(&format!("{}/api/admin/create_user", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
-            .json(&body)
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .form(&body)
             .send()
             .await
             .expect("Failed to execute request.")
@@ -440,6 +441,32 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to get chat token")
+    }
+
+    pub async fn patch_user_role<Body>(&self, user_id: &str, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .patch(&format!("{}/api/admin/user_role/{}", &self.address, user_id))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .form(&body)
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn post_accept_invitation<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/api/accept", &self.address))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request")
     }
 }
 

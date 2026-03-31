@@ -24,7 +24,7 @@ use crate::{
     routes::{
         chat_token, check_auth, delete_article, edit_article, get_articles, get_messages,
         health_check, insert_article, login, logout, patch_message, post_message, publish_article,
-        root, totp_confirm, totp_disable, totp_setup, totp_status, verify_totp,
+        root, totp_confirm, totp_disable, totp_setup, totp_status, verify_totp, create_user, accept_invitation
     },
 };
 
@@ -257,6 +257,7 @@ async fn run(
                     .route("/check_auth", web::get().to(check_auth))
                     .route("/contact", web::post().to(post_message))
                     .route("/blog", web::get().to(get_articles))
+                    .route("/accept", web::post().to(accept_invitation))
                     .service(
                         web::scope("/chat_token")
                             .wrap(from_fn(reject_anonymous_users))
@@ -294,6 +295,7 @@ async fn run(
                             })
                             .wrap(from_fn(reject_anonymous_users))
                             .wrap(from_fn(reject_non_admin))
+                            .route("/create_user", web::post().to(create_user))
                             .route("/messages", web::get().to(get_messages))
                             .route("/messages", web::patch().to(patch_message))
                             .route("/blog/post", web::post().to(insert_article))
