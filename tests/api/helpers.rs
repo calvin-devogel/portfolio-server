@@ -402,7 +402,7 @@ impl TestApp {
             .post(&format!("{}/api/admin/create_user", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .header("Idempotency-Key", Uuid::new_v4().to_string())
-            .form(&body)
+            .json(&body)
             .send()
             .await
             .expect("Failed to execute request.")

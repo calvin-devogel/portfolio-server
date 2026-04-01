@@ -77,7 +77,7 @@ pub async fn set_user_role(
 
 pub async fn reset_password(
     pool: web::Data<PgPool>,
-    user_id: web::ReqData<Uuid>,
+    user_id: web::Path<Uuid>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_id = user_id.into_inner();
 

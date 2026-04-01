@@ -6,7 +6,7 @@ use sqlx::PgPool;
 
 #[tracing::instrument(name = "Create user invitation", skip_all)]
 pub async fn create_user(
-    new_user: web::Form<CreateUser>,
+    new_user: web::Json<CreateUser>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
     user_id: web::ReqData<UserId>,
