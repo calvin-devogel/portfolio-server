@@ -6,5 +6,5 @@ pub use middleware::{
 };
 pub use password::{
     Credentials, change_password, compute_password_hash, validate_credentials,
-    validate_credentials_with_verifier,
+    validate_credentials_with_verifier, update_user_password
 };

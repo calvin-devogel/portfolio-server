@@ -20,7 +20,7 @@ use tracing_actix_web::TracingLogger;
 
 use crate::{
     authentication::{
-        cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin,
+        cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin, update_user_password,
     },
     configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
@@ -266,6 +266,11 @@ async fn run(
                             .wrap(from_fn(reject_anonymous_users))
                             // UserId needs to implement FromRequest?
                             .route("", web::get().to(chat_token)),
+                    )
+                    .service(
+                        web::scope("/change_password")
+                            .wrap(from_fn(reject_anonymous_users))
+                            .route("", web::post().to(update_user_password)),
                     )
                     .service(
                         web::scope("/admin")

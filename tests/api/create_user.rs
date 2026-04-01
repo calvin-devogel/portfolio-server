@@ -67,6 +67,7 @@ async fn admin_can_create_invitations_and_they_can_be_accepted() {
 #[tokio::test]
 async fn admin_can_change_user_roles() {
     let app = spawn_app().await;
+    app.test_user.login(&app).await;
 
     // create and extract invitation
     let new_user = serde_json::json!({
@@ -99,7 +100,7 @@ async fn admin_can_change_user_roles() {
 
     let user_record = sqlx::query!(
         "SELECT user_id FROM users WHERE username = $1",
-        accept_payload["username"].to_string()
+        accept_payload["username"].as_str().unwrap()
     )
     .fetch_one(&app.db_pool)
     .await
@@ -107,7 +108,7 @@ async fn admin_can_change_user_roles() {
 
     let user_id = user_record.user_id.to_string();
 
-    let role_update = serde_json::json!({ "role": "admin" });
+    let role_update = serde_json::json!({ "role": "Admin" });
     let response = app.patch_user_role(&user_id, &role_update).await;
     assert_eq!(response.status().as_u16(), 200);
 }
@@ -194,8 +195,8 @@ async fn passwords_can_be_changed() {
     });
 
     let credentials = serde_json::json!({
-        "username": app.test_user.username,
-        "password": app.test_user.password,
+        "user_id": app.test_user.user_id,
+        "current_password": app.test_user.password,
         "new_password": new_password,
     });
 

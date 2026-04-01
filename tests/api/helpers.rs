@@ -413,7 +413,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .post(&format!("{}/api/admin/change_password", &self.address))
+            .post(&format!("{}/api/change_password", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
             .send()
@@ -449,11 +449,11 @@ impl TestApp {
     {
         self.api_client
             .patch(&format!(
-                "{}/api/admin/user_role/{}",
+                "{}/api/admin/users/{}/role",
                 &self.address, user_id
             ))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
-            .form(&body)
+            .json(&body)
             .send()
             .await
             .expect("Failed to execute request")

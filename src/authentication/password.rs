@@ -1,3 +1,4 @@
+use actix_web::{HttpResponse, web};
 use anyhow::Context;
 use argon2::{
     Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version,
@@ -5,8 +6,9 @@ use argon2::{
 };
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
+use uuid::Uuid;
 
-use crate::errors::AuthError;
+use crate::{errors::AuthError, routes::{get_username_by_id}};
 use crate::telemetry::spawn_blocking_with_tracing;
 use crate::types::user::UserRole;
 
@@ -126,7 +128,7 @@ fn verify_password_hash(
 /// # Errors
 /// errors from anywhere in this function are handled by `anyhow` and passed up the pipeline
 pub async fn change_password(
-    user_id: uuid::Uuid,
+    user_id: Uuid,
     password: SecretString,
     pool: &PgPool,
 ) -> Result<(), anyhow::Error> {
@@ -147,6 +149,38 @@ pub async fn change_password(
     .await
     .context("Failed to change the user's password in the database.")?;
     Ok(())
+}
+
+#[derive(serde::Deserialize)]
+pub struct ChangePasswordBody {
+    pub user_id: Uuid,
+    pub current_password: SecretString,
+    pub new_password: SecretString,
+}
+
+pub async fn update_user_password(
+    pool: web::Data<PgPool>,
+    body: web::Json<ChangePasswordBody>,
+) -> Result<HttpResponse, AuthError> {
+    let body = body.into_inner();
+
+    // First, we need to validate the current password
+    let credentials = Credentials {
+        username: get_username_by_id(pool.clone(), body.user_id)
+            .await
+            .expect("Failed to retrieve username for user ID"),
+        password: body.current_password.clone(),
+    };
+
+    validate_credentials(credentials, &pool).await?;
+
+    // If validation succeeds, we can proceed to change the password
+    change_password(body.user_id, body.new_password, pool.get_ref())
+        .await
+        .context("Failed to change password.")
+        .map_err(|e| AuthError::UnexpectedError(e.into()))?;
+
+    Ok(HttpResponse::Accepted().finish())
 }
 
 pub fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
