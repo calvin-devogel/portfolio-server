@@ -20,7 +20,8 @@ use tracing_actix_web::TracingLogger;
 
 use crate::{
     authentication::{
-        cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin, update_user_password,
+        cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin,
+        update_user_password,
     },
     configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{

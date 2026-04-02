@@ -1,4 +1,6 @@
+mod accept_invitation;
 mod blog;
+mod change_password;
 mod chat_token;
 mod check_auth;
 mod create_user;

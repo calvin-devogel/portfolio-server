@@ -19,7 +19,7 @@ pub struct LoginRequest {
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
-    conn: ConnectionInfo,
+    _conn: ConnectionInfo,
     request: web::Form<LoginRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
@@ -32,7 +32,7 @@ pub async fn login(
     tracing::Span::current().record("username", tracing::field::display(&credentials.username));
 
     match validate_credentials(credentials, &pool).await {
-        Ok((user_id, totp_enabled, user_role)) => {
+        Ok((user_id, totp_enabled, must_change_password, user_role)) => {
             tracing::Span::current().record("user_id", tracing::field::display(&user_id));
             session.renew();
 
@@ -50,7 +50,15 @@ pub async fn login(
                 session
                     .insert_user_role(user_role)
                     .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
-                Ok(HttpResponse::Ok().finish())
+
+                if must_change_password {
+                    Ok(
+                        HttpResponse::Ok()
+                            .json(serde_json::json!({ "must_change_password": true })),
+                    )
+                } else {
+                    Ok(HttpResponse::Ok().finish())
+                }
             }
         }
         Err(e) => {

@@ -25,7 +25,6 @@ pub async fn get_username_by_id(
     pool: web::Data<PgPool>,
     user_id: Uuid,
 ) -> Result<String, actix_web::Error> {
-    let user_id = user_id;
     let user = sqlx::query_as!(
         User,
         r#"

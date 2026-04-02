@@ -471,6 +471,27 @@ impl TestApp {
             .await
             .expect("Failed to execute request")
     }
+
+    pub async fn set_must_change_password(&self, user_id: Uuid) {
+        sqlx::query!(
+            "UPDATE users SET must_change_password = true WHERE user_id = $1",
+            user_id,
+        )
+        .execute(&self.db_pool)
+        .await
+        .expect("Failed to set must_change_password");
+    }
+
+    pub async fn get_must_change_password_flag(&self, user_id: Uuid) -> bool {
+        sqlx::query!(
+            "SELECT must_change_password FROM users WHERE user_id = $1",
+            user_id,
+        )
+        .fetch_one(&self.db_pool)
+        .await
+        .expect("Failed to query must_change_password flag")
+        .must_change_password
+    }
 }
 
 pub async fn spawn_app() -> TestApp {

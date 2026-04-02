@@ -8,23 +8,25 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{errors::AuthError, routes::{get_username_by_id}};
 use crate::telemetry::spawn_blocking_with_tracing;
 use crate::types::user::UserRole;
+use crate::{authentication::UserId, errors::AuthError, routes::get_username_by_id};
 
 pub struct Credentials {
     pub username: String,
     pub password: SecretString,
 }
 
+type StoredCredentials = (Uuid, SecretString, bool, bool, UserRole);
+
 #[tracing::instrument(name = "Get stored credentials", skip(username, pool))]
 async fn get_stored_credentials(
     username: &str,
     pool: &PgPool,
-) -> Result<Option<(uuid::Uuid, SecretString, bool, UserRole)>, anyhow::Error> {
+) -> Result<Option<StoredCredentials>, anyhow::Error> {
     let row = sqlx::query!(
         r#"
-        SELECT user_id, password_hash, totp_enabled, role::TEXT
+        SELECT user_id, password_hash, totp_enabled, must_change_password, role::TEXT
         FROM users
         WHERE username = $1
         "#,
@@ -38,6 +40,7 @@ async fn get_stored_credentials(
             row.user_id,
             SecretString::new(row.password_hash.into()),
             row.totp_enabled,
+            row.must_change_password,
             row.role
                 .expect("User role not found")
                 .parse::<UserRole>()
@@ -50,7 +53,7 @@ async fn get_stored_credentials(
 pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
-) -> Result<(uuid::Uuid, bool, UserRole), AuthError> {
+) -> Result<(uuid::Uuid, bool, bool, UserRole), AuthError> {
     validate_credentials_with_verifier(credentials, pool, verify_password_hash).await
 }
 
@@ -63,22 +66,26 @@ pub async fn validate_credentials_with_verifier<F>(
     credentials: Credentials,
     pool: &PgPool,
     verify_fn: F,
-) -> Result<(uuid::Uuid, bool, UserRole), AuthError>
+) -> Result<(uuid::Uuid, bool, bool, UserRole), AuthError>
 where
     F: FnOnce(&SecretString, &SecretString) -> Result<(), AuthError> + Send + 'static, // Trait Bounds!
 {
     let mut user_id = None;
     let mut totp_enabled = false;
+    let mut must_change_password = false;
     let mut user_role = UserRole::User;
+
     let expected_password_hash = if let Some((
         stored_user_id,
         stored_password_hash,
         stored_totp_enabled,
+        stored_must_change_password,
         stored_user_role,
     )) = get_stored_credentials(&credentials.username, pool).await?
     {
         user_id = Some(stored_user_id);
         totp_enabled = stored_totp_enabled;
+        must_change_password = stored_must_change_password;
         user_role = stored_user_role;
         stored_password_hash
     } else {
@@ -101,7 +108,7 @@ where
     user_id
         .ok_or_else(|| anyhow::anyhow!("Unknown username"))
         .map_err(AuthError::InvalidCredentials)
-        .map(|id| (id, totp_enabled, user_role))
+        .map(|id| (id, totp_enabled, must_change_password, user_role))
 }
 
 #[tracing::instrument(
@@ -139,7 +146,7 @@ pub async fn change_password(
     sqlx::query!(
         r#"
         UPDATE users
-        SET password_hash = $1
+        SET password_hash = $1, must_change_password = FALSE
         WHERE user_id = $2
         "#,
         password_hash.expose_secret(),
@@ -153,7 +160,6 @@ pub async fn change_password(
 
 #[derive(serde::Deserialize)]
 pub struct ChangePasswordBody {
-    pub user_id: Uuid,
     pub current_password: SecretString,
     pub new_password: SecretString,
 }
@@ -161,12 +167,14 @@ pub struct ChangePasswordBody {
 pub async fn update_user_password(
     pool: web::Data<PgPool>,
     body: web::Json<ChangePasswordBody>,
+    user_id: web::ReqData<UserId>,
 ) -> Result<HttpResponse, AuthError> {
     let body = body.into_inner();
+    let user_id = **user_id;
 
     // First, we need to validate the current password
     let credentials = Credentials {
-        username: get_username_by_id(pool.clone(), body.user_id)
+        username: get_username_by_id(pool.clone(), user_id)
             .await
             .expect("Failed to retrieve username for user ID"),
         password: body.current_password.clone(),
@@ -175,10 +183,10 @@ pub async fn update_user_password(
     validate_credentials(credentials, &pool).await?;
 
     // If validation succeeds, we can proceed to change the password
-    change_password(body.user_id, body.new_password, pool.get_ref())
+    change_password(user_id, body.new_password, pool.get_ref())
         .await
         .context("Failed to change password.")
-        .map_err(|e| AuthError::UnexpectedError(e.into()))?;
+        .map_err(AuthError::UnexpectedError)?;
 
     Ok(HttpResponse::Accepted().finish())
 }

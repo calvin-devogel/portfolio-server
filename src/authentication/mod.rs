@@ -5,6 +5,6 @@ pub use middleware::{
     UserId, cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin,
 };
 pub use password::{
-    Credentials, change_password, compute_password_hash, validate_credentials,
-    validate_credentials_with_verifier, update_user_password
+    Credentials, change_password, compute_password_hash, update_user_password,
+    validate_credentials, validate_credentials_with_verifier,
 };
