@@ -10,7 +10,7 @@ async fn admin_can_create_invitations_and_they_can_be_accepted() {
     // create invitation
     let new_user = serde_json::json!({
         "email": "new-user@example.com",
-        "role": "User",
+        "role": "user",
     });
 
     let response = app.post_create_user(&new_user).await;
@@ -72,7 +72,7 @@ async fn admin_can_change_user_roles() {
     // create and extract invitation
     let new_user = serde_json::json!({
         "email": "role-test@example.com",
-        "role": "User",
+        "role": "user",
     });
 
     let create_response = app.post_create_user(&new_user).await;
@@ -108,7 +108,7 @@ async fn admin_can_change_user_roles() {
 
     let user_id = user_record.user_id.to_string();
 
-    let role_update = serde_json::json!({ "role": "Admin" });
+    let role_update = serde_json::json!({ "role": "admin" });
     let response = app.patch_user_role(&user_id, &role_update).await;
     assert_eq!(response.status().as_u16(), 200);
 }
@@ -130,7 +130,7 @@ async fn anonymous_users_cannot_create_invitations() {
 
     let new_user = serde_json::json!({
         "email": "test@email.com",
-        "role": "User",
+        "role": "user",
     });
 
     let response = app.post_create_user(&new_user).await;
@@ -158,7 +158,7 @@ async fn used_invitations_cannot_be_reused() {
 
     let new_user = serde_json::json!({
         "email": "reuse-test@example.com",
-        "role": "User"
+        "role": "user"
     });
     let create_response = app.post_create_user(&new_user).await;
     let create_body: serde_json::Value = create_response.json().await.unwrap();

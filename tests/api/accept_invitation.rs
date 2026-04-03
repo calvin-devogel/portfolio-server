@@ -10,7 +10,7 @@ async fn create_token(app: &crate::helpers::TestApp) -> String {
     let response = app
         .post_create_user(&serde_json::json!({
             "email": format!("{}@example.com", Uuid::new_v4()),
-            "role": "User",
+            "role": "user",
         }))
         .await;
 
