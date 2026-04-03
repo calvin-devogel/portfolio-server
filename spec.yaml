@@ -45,7 +45,7 @@ services:
     instance_count: 1
     instance_size_slug: basic-xxs
     routes:
-      - path: /chathub
+      - path: /ws/chat
     envs:
       - key: APP_REDIS_URI
         scope: RUN_TIME

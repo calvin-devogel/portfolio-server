@@ -9,8 +9,8 @@ use portfolio_server::{
 };
 use uuid::Uuid;
 
-const ANONYMOUS_OPERATION: &str = "POST:/api/contact";
-const AUTHORIZED_OPERATION: &str = "PATCH:/api/admin/messages";
+const ANONYMOUS_OPERATION: &str = "POST:/v1/contact";
+const AUTHORIZED_OPERATION: &str = "PATCH:/v1/admin/messages";
 
 #[tokio::test]
 async fn try_processing_returns_start_processing_for_new_key() {
@@ -255,7 +255,7 @@ async fn missing_transaction_operation_is_handled() {
     let app = spawn_app().await;
 
     let request = actix_web::test::TestRequest::post()
-        .uri("/api/contact")
+        .uri("/v1/contact")
         .insert_header(("Idempotency-Key", "missing-tx-key"))
         .to_http_request();
 
@@ -276,7 +276,7 @@ async fn process_fn_error_is_handled() {
     let app = spawn_app().await;
 
     let request = actix_web::test::TestRequest::post()
-        .uri("/api/contact")
+        .uri("/v1/contact")
         .insert_header(("Idempotency-Key", "error-key"))
         .to_http_request();
 

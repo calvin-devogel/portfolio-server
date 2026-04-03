@@ -212,7 +212,7 @@ async fn run(
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
             .service(
-                web::scope("/api")
+                web::scope("/v1")
                     .wrap(from_fn(cross_site_request_forgery_protection))
                     .wrap(
                         SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
