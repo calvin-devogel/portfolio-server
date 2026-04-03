@@ -3,6 +3,8 @@ use actix_web::{FromRequest, HttpRequest, dev::Payload};
 use std::future::{Ready, ready};
 use uuid::Uuid;
 
+use crate::types::user::UserRole;
+
 // wrapper type for session
 pub struct TypedSession(Session);
 
@@ -10,6 +12,7 @@ pub struct TypedSession(Session);
 impl TypedSession {
     const USER_ID_KEY: &'static str = "user_id";
     const MFA_PENDING_KEY: &'static str = "mfa_pending_user_id";
+    const USER_ROLE_KEY: &'static str = "user_role";
 
     pub fn renew(&self) {
         self.0.renew();
@@ -37,6 +40,18 @@ impl TypedSession {
 
     pub fn clear_user_id(&self) {
         self.0.remove(Self::USER_ID_KEY);
+    }
+
+    pub fn insert_user_role(&self, role: UserRole) -> Result<(), SessionInsertError> {
+        self.0.insert(Self::USER_ROLE_KEY, role.to_string())
+    }
+
+    // role should output a role enum
+    pub fn get_user_role(&self) -> Result<Option<UserRole>, SessionGetError> {
+        match self.0.get::<String>(Self::USER_ROLE_KEY)? {
+            Some(role_str) => Ok(role_str.parse::<UserRole>().ok()),
+            None => Ok(None),
+        }
     }
 
     pub fn log_out(self) {

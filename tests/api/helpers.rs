@@ -14,6 +14,7 @@ use portfolio_server::{
     configuration::{DatabaseSettings, get_configuration},
     startup::{Application, get_connection_pool},
     telemetry::{get_subscriber, init_subscriber},
+    types::user::UserRole,
 };
 
 // ensure the `tracing` task is only initialized once using `LazyLock`
@@ -87,6 +88,7 @@ pub struct TestUser {
     pub user_id: Uuid,
     pub username: String,
     pub password: String,
+    pub user_role: UserRole,
 }
 
 impl TestUser {
@@ -95,6 +97,7 @@ impl TestUser {
             user_id: Uuid::new_v4(),
             username: Uuid::new_v4().to_string(),
             password: Uuid::new_v4().to_string(),
+            user_role: UserRole::Admin,
         }
     }
 
@@ -182,7 +185,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .post(&format!("{}/api/login", &self.address))
+            .post(&format!("{}/v1/login", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .form(&body)
             .send()
@@ -192,7 +195,7 @@ impl TestApp {
 
     pub async fn post_logout(&self) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/api/logout", &self.address))
+            .post(&format!("{}/v1/logout", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .send()
             .await
@@ -201,7 +204,7 @@ impl TestApp {
 
     pub async fn check_auth(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/api/check_auth", &self.address))
+            .get(&format!("{}/v1/check_auth", &self.address))
             .send()
             .await
             .expect("Failed to execute request")
@@ -220,7 +223,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .post(&format!("{}/api/contact", &self.address))
+            .post(&format!("{}/v1/contact", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .form(&body)
@@ -231,7 +234,7 @@ impl TestApp {
 
     pub async fn get_messages(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/api/admin/messages", &self.address))
+            .get(&format!("{}/v1/admin/messages", &self.address))
             .send()
             .await
             .expect("Failed to get messages.")
@@ -242,7 +245,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .patch(&format!("{}/api/admin/messages", &self.address))
+            .patch(&format!("{}/v1/admin/messages", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
@@ -260,7 +263,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .patch(&format!("{}/api/admin/messages", &self.address))
+            .patch(&format!("{}/v1/admin/messages", &self.address))
             .header("Idempotency-Key", idempotency_key.to_string())
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
@@ -282,7 +285,7 @@ impl TestApp {
             header_map.insert("BlogPost-Slug", slug.unwrap().parse().unwrap());
         }
         self.api_client
-            .get(&format!("{}/api/blog", &self.address))
+            .get(&format!("{}/v1/blog", &self.address))
             .headers(header_map)
             .send()
             .await
@@ -294,7 +297,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .post(format!("{}/api/admin/blog/post", &self.address))
+            .post(format!("{}/v1/admin/blog/post", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
@@ -308,7 +311,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .patch(format!("{}/api/admin/blog/publish", &self.address))
+            .patch(format!("{}/v1/admin/blog/publish", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
@@ -322,7 +325,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .patch(format!("{}/api/admin/blog/edit", &self.address))
+            .patch(format!("{}/v1/admin/blog/edit", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
@@ -336,7 +339,7 @@ impl TestApp {
         Body: serde::Serialize,
     {
         self.api_client
-            .delete(format!("{}/api/admin/blog/delete", &self.address))
+            .delete(format!("{}/v1/admin/blog/delete", &self.address))
             .header("Idempotency-Key", Uuid::new_v4().to_string())
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&body)
@@ -347,7 +350,7 @@ impl TestApp {
 
     pub async fn post_verify_totp(&self, code: &str) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/api/verify_totp", &self.address))
+            .post(&format!("{}/v1/verify_totp", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&serde_json::json!({ "code": code }))
             .send()
@@ -357,7 +360,7 @@ impl TestApp {
 
     pub async fn get_totp_setup(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/api/admin/totp/setup", &self.address))
+            .get(&format!("{}/v1/admin/totp/setup", &self.address))
             .send()
             .await
             .expect("Failed to execute request.")
@@ -365,7 +368,7 @@ impl TestApp {
 
     pub async fn post_totp_confirm(&self, code: &str) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/api/admin/totp/confirm", &self.address))
+            .post(&format!("{}/v1/admin/totp/confirm", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&serde_json::json!({ "code": code }))
             .send()
@@ -375,7 +378,7 @@ impl TestApp {
 
     pub async fn post_totp_disable(&self, password: &str) -> reqwest::Response {
         self.api_client
-            .post(&format!("{}/api/admin/totp/disable", &self.address))
+            .post(&format!("{}/v1/admin/totp/disable", &self.address))
             .header("X-XSRF-TOKEN", &self.xsrf_token)
             .json(&serde_json::json!({ "password": password }))
             .send()
@@ -385,10 +388,109 @@ impl TestApp {
 
     pub async fn get_totp_status(&self) -> reqwest::Response {
         self.api_client
-            .get(&format!("{}/api/admin/totp/status", &self.address))
+            .get(&format!("{}/v1/admin/totp/status", &self.address))
             .send()
             .await
             .expect("Failed to execute request")
+    }
+
+    pub async fn post_create_user<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/v1/admin/create_user", &self.address))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .header("Idempotency-Key", Uuid::new_v4().to_string())
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn post_change_password<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/v1/change_password", &self.address))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request.")
+    }
+
+    pub async fn get_user_names(&self, username: Option<String>) -> reqwest::Response {
+        let mut header_map = HeaderMap::new();
+        if username.is_some() {
+            header_map.insert("UserName", username.unwrap().parse().unwrap());
+        }
+
+        self.api_client
+            .get(&format!("{}/v1/admin/users", &self.address))
+            .headers(header_map)
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn get_chat_token(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/v1/chat_token", &self.address))
+            .send()
+            .await
+            .expect("Failed to get chat token")
+    }
+
+    pub async fn patch_user_role<Body>(&self, user_id: &str, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .patch(&format!(
+                "{}/v1/admin/users/{}/role",
+                &self.address, user_id
+            ))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn post_accept_invitation<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/v1/accept", &self.address))
+            .header("X-XSRF-TOKEN", &self.xsrf_token)
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn set_must_change_password(&self, user_id: Uuid) {
+        sqlx::query!(
+            "UPDATE users SET must_change_password = true WHERE user_id = $1",
+            user_id,
+        )
+        .execute(&self.db_pool)
+        .await
+        .expect("Failed to set must_change_password");
+    }
+
+    pub async fn get_must_change_password_flag(&self, user_id: Uuid) -> bool {
+        sqlx::query!(
+            "SELECT must_change_password FROM users WHERE user_id = $1",
+            user_id,
+        )
+        .fetch_one(&self.db_pool)
+        .await
+        .expect("Failed to query must_change_password flag")
+        .must_change_password
     }
 }
 
@@ -420,7 +522,7 @@ pub async fn spawn_app() -> TestApp {
         .unwrap();
 
     let seed = client
-        .get(format!("http://localhost:{}/api/blog", application_port))
+        .get(format!("http://localhost:{}/v1/blog", application_port))
         .send()
         .await
         .expect("Failed to seed CSRF token");
@@ -483,5 +585,6 @@ pub fn _seed_user(username: String, password: SecretString) -> TestUser {
         user_id: Uuid::new_v4(),
         username,
         password: password_hash,
+        user_role: UserRole::Admin,
     }
 }

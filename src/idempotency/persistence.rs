@@ -252,7 +252,7 @@ where
 ///             - a reference to the Postgres connection pool
 ///             - the idempotency key (a caller-provided user_id + operation-scoped idempotency key)
 ///             - an optional user_id (for authenticated/anonymous actions)
-///             - and an operation identifier (ie. "POST:/api/contact")
+///             - and an operation identifier (ie. "POST:/v1/contact")
 /// and returns:
 ///     - a Result that on success, is the HTTP response returned by `action`
 ///     - and on error, is the generic error E from either `action`, `process` or itself, which must:

@@ -6,7 +6,7 @@ async fn requests_without_csrf_header_are_rejected() {
 
     let response = app
         .api_client
-        .post(&format!("{}/api/login", &app.address))
+        .post(&format!("{}/v1/login", &app.address))
         .form(&serde_json::json!({ "username": "fake_user", "password": "fake_password"}))
         .send()
         .await
@@ -21,7 +21,7 @@ async fn requests_with_mismatched_csrf_token_are_rejected() {
 
     let response = app
         .api_client
-        .post(&format!("{}/api/login", &app.address))
+        .post(&format!("{}/v1/login", &app.address))
         .header("X-XSRF-TOKEN", "not-the-right-token")
         .form(&serde_json::json!({ "username": "fake_user", "password": "fake_password" }))
         .send()
