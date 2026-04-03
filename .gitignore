@@ -1,3 +1,4 @@
 /target
 /generic_queries
 *.pem
+.envrc

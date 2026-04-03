@@ -34,6 +34,31 @@ services:
       - key: APP_DATABASE__NAME
         scope: RUN_TIME
         value: ${portfolio.DATABASE}
+  - name: portfolio-chat
+    dockerfile_path: Dockerfile
+    source_dir: .
+    image:
+      registry_type: DOCR
+      registry: portfolio-project-registry
+      repository: portfolio-chat
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    routes:
+      - path: /chathub
+    envs:
+      - key: APP_REDIS_URI
+        scope: RUN_TIME
+        type: SECRET
+      - key: APP_APPLICATION__JWT_PUBLIC_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: APP_APPLICATION__JWT_ISSUER
+        scope: RUN_TIME
+        value: portfolio-server
+      - key: APP_CORS__ALLOWED_ORIGINS__0
+        scope: RUN_TIME
+        value: ${APP_URL}
 databases:
   - engine: PG
     name: portfolio

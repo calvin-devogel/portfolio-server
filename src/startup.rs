@@ -119,15 +119,8 @@ impl Application {
             anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes")
         })?;
         let totp_key = TotpEncryptionKey(key);
-        let jwt_key_pem = std::fs::read_to_string(&configuration.application.jwt_private_key_path)
-            .map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to read jwt_private_key_path '{}': {e}",
-                    configuration.application.jwt_private_key_path
-                )
-            })?;
 
-        let jwt_private_key = JwtPrivateKey(SecretString::from(jwt_key_pem));
+        let jwt_private_key = JwtPrivateKey(configuration.application.jwt_private_key);
 
         let secrets_config = SecretsConfig {
             hmac: hmac_key,
