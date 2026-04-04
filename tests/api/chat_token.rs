@@ -67,7 +67,7 @@ async fn chat_token_uses_es256_algorithm() {
 }
 
 #[tokio::test]
-async fn chat_token_expires_within_ten_seconds() {
+async fn chat_token_expires_within_sixty_seconds() {
     let app = spawn_app().await;
     app.test_user.login(&app).await;
 
@@ -78,9 +78,9 @@ async fn chat_token_expires_within_ten_seconds() {
     assert!(claims.exp > before, "token exp is already in the past");
 
     assert!(
-        claims.exp <= before + 15,
+        claims.exp <= before + 70,
         "token exp is too far in the future: {} (expected <= {})",
         claims.exp,
-        before + 15
+        before + 70
     );
 }

@@ -122,12 +122,13 @@ impl TestUser {
         .to_string();
 
         sqlx::query!(
-            "INSERT INTO users (user_id, username, password_hash, totp_enabled)
-            VALUES ($1, $2, $3, $4)",
+            "INSERT INTO users (user_id, username, password_hash, totp_enabled, role)
+            VALUES ($1, $2, $3, $4, $5)",
             self.user_id,
             self.username,
             password_hash,
-            false
+            false,
+            self.user_role as UserRole,
         )
         .execute(pool)
         .await
