@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO user_invitations (id, email, role, invitation_token_hash, expires_at, created_at)\n        VALUES ($1, $2, $3, $4, $5, NOW())\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "103e328063ab5fa3603babf8603069aaaea424199fac21c119f7edba44e64baa"
+}
