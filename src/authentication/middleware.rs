@@ -2,15 +2,17 @@ use actix_web::{
     FromRequest, HttpMessage,
     body::MessageBody,
     cookie::{Cookie, SameSite},
-    dev::{ServiceRequest, ServiceResponse},
+    dev::{Payload, ServiceRequest, ServiceResponse},
     error::InternalError,
     http::Method,
     middleware::Next,
 };
+use std::future::{Ready, ready};
 use std::ops::Deref;
 use uuid::Uuid;
 
 use crate::session_state::TypedSession;
+use crate::types::user::UserRole;
 use crate::utils::{e500, unauthorized};
 
 #[derive(Copy, Clone, Debug)]
@@ -27,6 +29,20 @@ impl Deref for UserId {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl FromRequest for UserId {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(req: &actix_web::HttpRequest, _: &mut Payload) -> Self::Future {
+        ready(
+            req.extensions()
+                .get::<UserId>()
+                .copied()
+                .ok_or_else(|| actix_web::error::ErrorUnauthorized("Not Authenticated")),
+        )
     }
 }
 
@@ -111,4 +127,26 @@ pub async fn cross_site_request_forgery_protection(
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
     Ok(res)
+}
+
+pub async fn reject_non_admin(
+    mut request: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    let session = {
+        let (http_request, payload) = request.parts_mut();
+        TypedSession::from_request(http_request, payload).await
+    };
+
+    let session = session.expect("session middleware not configured");
+
+    if let Some(user_role) = session.get_user_role().map_err(e500)?
+        && user_role == UserRole::Admin
+    {
+        return next.call(request).await;
+    }
+
+    let response = unauthorized();
+    let e = anyhow::anyhow!("The user is not an admin");
+    Err(InternalError::from_response(e, response).into())
 }

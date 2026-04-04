@@ -1,3 +1,4 @@
+use jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER as JWT_PROVIDER;
 use rustls::crypto::CryptoProvider;
 use std::fmt::{Debug, Display};
 use tokio::task::JoinError;
@@ -14,6 +15,11 @@ async fn main() -> anyhow::Result<()> {
     // seems like maybe alpine doesn't specify a default provider at the OS level?
     // this might not be what's actually happening, but this does make auth work inside the container.
     let _ = CryptoProvider::install_default(rustls::crypto::aws_lc_rs::default_provider());
+
+    // yay! jwt also needs its own crypto provider specified
+    if JWT_PROVIDER.install_default().is_err() {
+        tracing::warn!("JWT crypto provider was already installed");
+    }
 
     // start logging (or console?)
     init_tracing();

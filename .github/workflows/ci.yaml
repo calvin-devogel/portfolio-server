@@ -96,6 +96,7 @@ jobs:
               run: cargo test
               env:
                 APP_ENVIRONMENT: local
+                APP_APPLICATION__JWT_PRIVATE_KEY: ${{ secrets.JWT_PRIVATE_KEY }}
     
     docker-build:
         name: Docker Build

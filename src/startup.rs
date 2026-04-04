@@ -19,11 +19,15 @@ use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
-    authentication::{cross_site_request_forgery_protection, reject_anonymous_users},
+    authentication::{
+        cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin,
+        update_user_password,
+    },
     configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
-        check_auth, delete_article, edit_article, get_articles, get_messages, health_check,
-        insert_article, login, logout, patch_message, post_message, publish_article, root,
+        accept_invitation, chat_token, check_auth, create_user, delete_article, edit_article,
+        get_all_users, get_articles, get_messages, health_check, insert_article, login, logout,
+        patch_message, post_message, publish_article, reset_password, root, set_user_role,
         totp_confirm, totp_disable, totp_setup, totp_status, verify_totp,
     },
 };
@@ -35,12 +39,22 @@ struct UtilConfig {
     ttl: TtlSettings,
 }
 
+#[derive(Clone)]
+struct SecretsConfig {
+    hmac: HmacSecret,
+    totp: TotpEncryptionKey,
+    jwt: JwtPrivateKey,
+}
+
 // wrapper type for SecretString
 #[derive(Clone)]
 pub struct HmacSecret(pub SecretString);
 
 #[derive(Clone)]
 pub struct TotpEncryptionKey(pub [u8; 32]);
+
+#[derive(Clone)]
+pub struct JwtPrivateKey(pub SecretString);
 
 // wrapper for application url
 pub struct ApplicationBaseUrl(pub String);
@@ -91,6 +105,7 @@ impl Application {
             ttl: configuration.ttl,
         };
 
+        let hmac_key = HmacSecret(configuration.application.hmac_secret);
         let raw_totp_key = configuration
             .application
             .totp_encryption_key
@@ -104,6 +119,14 @@ impl Application {
             anyhow::anyhow!("totp_encryption_key must be exactly 32 bytes")
         })?;
         let totp_key = TotpEncryptionKey(key);
+
+        let jwt_private_key = JwtPrivateKey(configuration.application.jwt_private_key);
+
+        let secrets_config = SecretsConfig {
+            hmac: hmac_key,
+            totp: totp_key,
+            jwt: jwt_private_key,
+        };
 
         let listener = TcpListener::bind(&address).map_err(|e| {
             tracing::error!(
@@ -120,8 +143,7 @@ impl Application {
             listener,
             connection_pool,
             configuration.application.base_url,
-            configuration.application.hmac_secret,
-            totp_key,
+            secrets_config,
             configuration.redis_uri,
             util_config,
         )
@@ -158,14 +180,13 @@ async fn run(
     listener: TcpListener,
     db_pool: PgPool,
     base_url: String,
-    hmac_secret: SecretString,
-    totp_encryption_key: TotpEncryptionKey,
+    secrets: SecretsConfig,
     redis_uri: SecretString,
     util_config: UtilConfig,
 ) -> Result<Server, anyhow::Error> {
     let db_pool = Data::new(db_pool);
     let base_url = Data::new(ApplicationBaseUrl(base_url));
-    let secret_key = Key::from(hmac_secret.expose_secret().as_bytes());
+    let secret_key = Key::from(secrets.hmac.0.expose_secret().as_bytes());
     let message_store = CookieMessageStore::builder(secret_key.clone())
         .same_site(SameSite::Strict)
         .build();
@@ -191,7 +212,7 @@ async fn run(
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
             .service(
-                web::scope("/api")
+                web::scope("/v1")
                     .wrap(from_fn(cross_site_request_forgery_protection))
                     .wrap(
                         SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
@@ -233,6 +254,18 @@ async fn run(
                     .route("/check_auth", web::get().to(check_auth))
                     .route("/contact", web::post().to(post_message))
                     .route("/blog", web::get().to(get_articles))
+                    .route("/accept", web::post().to(accept_invitation))
+                    .service(
+                        web::scope("/chat_token")
+                            .wrap(from_fn(reject_anonymous_users))
+                            // UserId needs to implement FromRequest?
+                            .route("", web::get().to(chat_token)),
+                    )
+                    .service(
+                        web::scope("/change_password")
+                            .wrap(from_fn(reject_anonymous_users))
+                            .route("", web::post().to(update_user_password)),
+                    )
                     .service(
                         web::scope("/admin")
                             .app_data(web::JsonConfig::default().limit(65_536).error_handler(
@@ -263,6 +296,14 @@ async fn run(
                                     .max_age(util_config.cors.max_age)
                             })
                             .wrap(from_fn(reject_anonymous_users))
+                            .wrap(from_fn(reject_non_admin))
+                            .route("/create_user", web::post().to(create_user))
+                            .route("/users", web::get().to(get_all_users))
+                            .route("/users/{user_id}/role", web::patch().to(set_user_role))
+                            .route(
+                                "/users/{user_id}/reset_password",
+                                web::patch().to(reset_password),
+                            )
                             .route("/messages", web::get().to(get_messages))
                             .route("/messages", web::patch().to(patch_message))
                             .route("/blog/post", web::post().to(insert_article))
@@ -277,9 +318,10 @@ async fn run(
             )
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
-            .app_data(Data::new(HmacSecret(hmac_secret.clone())))
+            .app_data(Data::new(secrets.hmac.clone()))
             .app_data(Data::new(util_config.rate.message.clone()))
-            .app_data(Data::new(totp_encryption_key.clone()))
+            .app_data(Data::new(secrets.totp.clone()))
+            .app_data(Data::new(secrets.jwt.clone()))
     })
     .listen(listener)?
     .run();

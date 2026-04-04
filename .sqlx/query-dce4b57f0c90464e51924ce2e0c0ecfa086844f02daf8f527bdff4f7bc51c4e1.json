@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users\n        SET must_change_password = TRUE\n        WHERE user_id = $1::UUID\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "dce4b57f0c90464e51924ce2e0c0ecfa086844f02daf8f527bdff4f7bc51c4e1"
+}
