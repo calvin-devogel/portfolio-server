@@ -11,12 +11,14 @@ use crate::{authentication::UserId, startup::JwtPrivateKey, utils::e500};
 // sub -> who (UUID)
 // exp -> expiry (60 seconds)
 // iss -> issuer ("portfolio-server")
+// aud -> audience ("portfolio-chat")
 #[derive(serde::Serialize, serde::Deserialize)]
 struct ChatClaims {
     name: String,
     sub: String,
     exp: i64,
     iss: String,
+    aud: String,
 }
 
 #[tracing::instrument("Get chat token", skip(jwt_key, pool))]
@@ -43,6 +45,7 @@ pub async fn chat_token(
         sub: user_id.to_string(),
         exp,
         iss: "portfolio-server".to_string(),
+        aud: "portfolio-chat".to_string(),
     };
 
     let pem = jwt_key.0.expose_secret();
