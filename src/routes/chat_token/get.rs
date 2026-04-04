@@ -28,7 +28,7 @@ pub async fn chat_token(
     // expires in 60 seconds, once the WebSocket is established, the token
     // is no longer needed
     let exp = chrono::Utc::now()
-        .checked_add_signed(chrono::Duration::seconds(10))
+        .checked_add_signed(chrono::Duration::seconds(60))
         .ok_or_else(|| e500(anyhow::anyhow!("time overflow")))?
         .timestamp();
 

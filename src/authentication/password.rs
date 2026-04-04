@@ -42,8 +42,7 @@ async fn get_stored_credentials(
             row.totp_enabled,
             row.must_change_password,
             row.role
-                .expect("User role not found")
-                .parse::<UserRole>()
+                .and_then(|role| role.parse::<UserRole>().ok())
                 .unwrap_or(UserRole::User),
         )
     });
@@ -176,7 +175,9 @@ pub async fn update_user_password(
     let credentials = Credentials {
         username: get_username_by_id(pool.clone(), user_id)
             .await
-            .expect("Failed to retrieve username for user ID"),
+            .map_err(|e| anyhow::anyhow!(e.to_string()))
+            .context("Failed to retrieve username for user ID.")
+            .map_err(AuthError::UnexpectedError)?,
         password: body.current_password.clone(),
     };
 

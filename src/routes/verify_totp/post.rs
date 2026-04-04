@@ -88,8 +88,8 @@ async fn get_totp_secret_role_and_flags(
 
     let user_role = row
         .role
-        .ok_or_else(|| anyhow::anyhow!("User role not found"))?
-        .parse::<UserRole>()
+        .as_deref()
+        .map(|role| role.parse::<UserRole>().unwrap_or(UserRole::User))
         .unwrap_or(UserRole::User);
 
     Ok(row
