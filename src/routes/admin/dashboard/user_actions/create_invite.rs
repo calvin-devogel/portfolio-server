@@ -1,4 +1,7 @@
-use crate::{authentication::UserId, idempotency::execute_idempotent, types::user::CreateUser};
+use crate::{
+    authentication::UserId, idempotency::execute_idempotent, startup::ApplicationBaseUrl,
+    types::user::CreateUser,
+};
 use actix_web::{HttpRequest, HttpResponse, web};
 use rand::{RngExt, distr::Alphanumeric};
 use sha2::{Digest, Sha256};
@@ -10,13 +13,14 @@ pub async fn create_user(
     pool: web::Data<PgPool>,
     request: HttpRequest,
     user_id: web::ReqData<UserId>,
+    base_url: web::Data<ApplicationBaseUrl>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_to_create = new_user.into_inner();
     let user_id = Some(**user_id);
     user_to_create.validate()?;
 
     execute_idempotent(&request, &pool, user_id, move |tx| {
-        Box::pin(async move { process_create_new_user(tx, user_to_create).await })
+        Box::pin(async move { process_create_new_user(tx, user_to_create, &base_url.0).await })
     })
     .await
 }
@@ -25,6 +29,7 @@ pub async fn create_user(
 async fn process_create_new_user(
     transaction: &mut sqlx::Transaction<'static, sqlx::Postgres>,
     new_user: CreateUser,
+    base_url: &str,
 ) -> Result<HttpResponse, actix_web::Error> {
     // random raw token
     let raw_token: String = rand::rng()
@@ -62,7 +67,7 @@ async fn process_create_new_user(
     let response_data = serde_json::json!({
         "success": true,
         "message": "Invitation created successfully.",
-        "link": format!("http://localhost:4200/invitation/accept?token={}", raw_token)
+        "link": format!("{}/invitation/accept?token={}", base_url, raw_token)
     });
 
     Ok(HttpResponse::Ok().json(response_data))
