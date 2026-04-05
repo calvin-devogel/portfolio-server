@@ -1,11 +1,11 @@
 use actix_web::{HttpResponse, ResponseError, dev::ConnectionInfo, error::InternalError, web};
 use sqlx::PgPool;
 
-use crate::authentication::{Credentials, validate_credentials};
+use crate::authentication::{validate_credentials};
 use crate::errors::AuthError;
 use crate::session_state::TypedSession;
 
-use super::models::LoginRequest;
+use super::models::Credentials;
 
 #[allow(clippy::missing_errors_doc)]
 #[allow(clippy::future_not_send)]
@@ -15,15 +15,11 @@ use super::models::LoginRequest;
 )]
 pub async fn login(
     _conn: ConnectionInfo,
-    request: web::Form<LoginRequest>,
+    request: web::Form<Credentials>,
     pool: web::Data<PgPool>,
     session: TypedSession,
 ) -> Result<HttpResponse, InternalError<AuthError>> {
-    let LoginRequest { username, password } = request.into_inner();
-    let credentials = Credentials {
-        username,
-        password,
-    };
+    let credentials = request.into_inner();
 
     tracing::Span::current().record("username", tracing::field::display(&credentials.username));
 
