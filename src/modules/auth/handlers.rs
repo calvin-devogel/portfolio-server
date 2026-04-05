@@ -1,11 +1,11 @@
 use actix_web::{HttpResponse, ResponseError, dev::ConnectionInfo, error::InternalError, web};
 use sqlx::PgPool;
 
-use crate::authentication::{validate_credentials};
 use crate::errors::AuthError;
-use crate::session_state::TypedSession;
 
 use super::models::Credentials;
+use super::crypto::validate_credentials;
+use super::session::TypedSession;
 
 #[allow(clippy::missing_errors_doc)]
 #[allow(clippy::future_not_send)]

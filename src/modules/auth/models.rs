@@ -10,7 +10,7 @@ pub struct Credentials {
     pub password: SecretString,
 }
 
-pub type StoredCredentials = (Uuid, SecretString, bool, bool, crate::types::user::UserRole);
+pub type StoredCredentials = (Uuid, SecretString, bool, bool, UserRole);
 pub type UserDetails = (Uuid, bool, bool, UserRole);
 
 #[derive(Copy, Clone, Debug)]
