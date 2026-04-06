@@ -1,14 +1,18 @@
-use sqlx::PgPool;
-use secrecy::{ExposeSecret, SecretString};
+use crate::{errors::AuthError, telemetry::spawn_blocking_with_tracing};
+use aes_gcm::{
+    Aes256Gcm, Key, Nonce,
+    aead::{Aead, AeadCore, KeyInit, OsRng},
+};
 use anyhow::Context;
 use argon2::{
     Algorithm, Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier, Version,
-    password_hash::{SaltString, rand_core::OsRng},
+    password_hash::{SaltString, rand_core::OsRng as RandOsRng},
 };
-use crate::{errors::AuthError, telemetry::spawn_blocking_with_tracing};
+use secrecy::{ExposeSecret, SecretString};
+use sqlx::PgPool;
 
-use super::models::{Credentials, UserDetails, UserRole};
 use super::db::get_stored_credentials;
+use super::models::{Credentials, UserDetails, UserRole};
 
 // wrapper for credential validation that uses the default hash function
 // exposed publicly as `validate_credentials` but allows for injecting
@@ -62,19 +66,13 @@ where
         .await
         .context("Failed to spawn blocking task for password verification.")??;
 
-
     // only set to Some if we find stored credentials
     // so even if the default password hash ends up matching (somehow)
     // we never authenticate a non-existent user.
     user_id
         .ok_or_else(|| anyhow::anyhow!("Unknown username"))
         .map_err(AuthError::InvalidCredentials)
-        .map(|id| (
-            id,
-            totp_enabled,
-            must_change_password,
-            user_role,
-        ))
+        .map(|id| (id, totp_enabled, must_change_password, user_role))
 }
 
 #[tracing::instrument(
@@ -98,7 +96,7 @@ fn verify_password_hash(
 }
 
 pub fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
-    let salt = SaltString::generate(&mut OsRng);
+    let salt = SaltString::generate(&mut RandOsRng);
     // expect is acceptable here because password hashing should never fail
     // if Argon2 is configured and working properly, and we aren't testing Argon2
     // so there's no reason to propogate this error
@@ -110,4 +108,63 @@ pub fn compute_password_hash(password: &SecretString) -> Result<SecretString, an
     .hash_password(password.expose_secret().as_bytes(), &salt)?
     .to_string();
     Ok(SecretString::new(Box::from(password_hash)))
+}
+
+pub fn encrypt(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, anyhow::Error> {
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext)
+        .map_err(|_| anyhow::anyhow!("Encryption failed"))?;
+    let mut out = nonce.to_vec();
+    out.extend_from_slice(&ciphertext);
+    Ok(out)
+}
+
+pub fn decrypt(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, anyhow::Error> {
+    anyhow::ensure!(data.len() > 12, "Ciphertext too short");
+    let (nonce_bytes, ciphertext) = data.split_at(12);
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+    cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .map_err(|_| anyhow::anyhow!("Decryption failed"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // fake key to test decryption
+    const KEY: &[u8; 32] = b"KKVdjF4YnQKhuikgbUzR4HRjOZPzDzfq";
+
+    #[test]
+    fn data_too_short() {
+        let result = decrypt(KEY, &[0u8; 12]);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Ciphertext too short");
+    }
+
+    #[test]
+    fn ciphertext_is_corrupted() {
+        let mut ciphertext = encrypt(KEY, b"hello").unwrap();
+        *ciphertext.last_mut().unwrap() ^= 0xFF;
+        let result = decrypt(KEY, &ciphertext);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "Decryption failed");
+    }
+
+    #[test]
+    fn verify_password_hash_gives_correct_context() {
+        let fake_expected_password_hash = SecretString::new("improperly_formatted_hash".into());
+        let fake_password_candidate = SecretString::new("fake_candidate".into());
+
+        let result = verify_password_hash(&fake_expected_password_hash, &fake_password_candidate);
+
+        let e = result.unwrap_err();
+
+        assert!(
+            e.to_string()
+                .contains("Failed to parse hash in PHC string format.")
+        );
+    }
 }
