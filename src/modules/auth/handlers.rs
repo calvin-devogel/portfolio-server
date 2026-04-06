@@ -1,7 +1,5 @@
 use crate::errors::AuthError;
-use actix_web::{
-    HttpRequest, HttpResponse, dev::ConnectionInfo, web,
-};
+use actix_web::{HttpRequest, HttpResponse, dev::ConnectionInfo, web};
 use anyhow::Context;
 use rand::{RngExt, distr::Alphanumeric};
 use secrecy::{ExposeSecret, SecretString};
@@ -37,8 +35,7 @@ pub async fn login(
     session: TypedSession,
 ) -> Result<HttpResponse, AuthError> {
     let (user_id, totp_enabled, must_change_password, user_role) =
-        validate_credentials(request.0, &pool)
-            .await?;
+        validate_credentials(request.0, &pool).await?;
 
     tracing::Span::current().record("user_id", tracing::field::display(&user_id));
     session.renew();
@@ -51,9 +48,11 @@ pub async fn login(
 
         Ok(HttpResponse::Accepted().json(serde_json::json!({ "mfa_required": true })))
     } else {
-        session.insert_user_id(user_id)
+        session
+            .insert_user_id(user_id)
             .map_err(|e| AuthError::UnexpectedError(e.into()))?;
-        session.insert_user_role(user_role)
+        session
+            .insert_user_role(user_role)
             .map_err(|e| AuthError::UnexpectedError(e.into()))?;
 
         Ok(ok_must_change(must_change_password))
@@ -128,11 +127,9 @@ pub async fn verify_totp(
 pub async fn totp_confirm(
     request: web::Json<TotpRequest>,
     pool: web::Data<PgPool>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     encryption_key: web::Data<TotpEncryptionKey>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
-
     let row = sqlx::query!(
         "SELECT totp_secret, totp_enabled FROM users WHERE user_id =  $1",
         *user_id,
@@ -173,10 +170,8 @@ pub async fn totp_confirm(
 pub async fn totp_disable(
     request: web::Json<DisableTotpRequest>,
     pool: web::Data<PgPool>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
-
     let username = sqlx::query_scalar!("SELECT username FROM users WHERE user_id = $1", *user_id,)
         .fetch_one(pool.as_ref())
         .await
@@ -208,11 +203,9 @@ pub async fn totp_disable(
 #[tracing::instrument(name = "TOTP setup", skip(pool, user_id, encryption_key))]
 pub async fn totp_setup(
     pool: web::Data<PgPool>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     encryption_key: web::Data<TotpEncryptionKey>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
-
     let status = sqlx::query!(
         "SELECT totp_enabled FROM users WHERE user_id = $1",
         *user_id
@@ -255,14 +248,13 @@ pub async fn create_user(
     new_user: web::Json<CreateUser>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     base_url: web::Data<ApplicationBaseUrl>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let user_to_create = new_user.into_inner();
-    let user_id = Some(**user_id);
     user_to_create.validate()?;
 
-    execute_idempotent(&request, &pool, user_id, move |tx| {
+    execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_create_new_user(tx, user_to_create, &base_url.0).await })
     })
     .await
@@ -317,14 +309,13 @@ async fn process_create_new_user(
 pub async fn update_user_password(
     pool: web::Data<PgPool>,
     body: web::Json<ChangePasswordBody>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
 ) -> Result<HttpResponse, AuthError> {
     let body = body.into_inner();
-    let user_id = **user_id;
 
     // First, we need to validate the current password
     let credentials = Credentials {
-        username: get_username_by_id(pool.clone(), user_id)
+        username: get_username_by_id(pool.clone(), *user_id)
             .await
             .map_err(|e| anyhow::anyhow!(e.to_string()))
             .context("Failed to retrieve username for user ID.")
@@ -335,7 +326,7 @@ pub async fn update_user_password(
     validate_credentials(credentials, &pool).await?;
 
     // If validation succeeds, we can proceed to change the password
-    change_password(user_id, body.new_password, pool.get_ref())
+    change_password(*user_id, body.new_password, pool.get_ref())
         .await
         .context("Failed to change password.")
         .map_err(AuthError::UnexpectedError)?;

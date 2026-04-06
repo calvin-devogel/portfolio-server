@@ -1,9 +1,12 @@
-use actix_web::{FromRequest, HttpMessage, dev::Payload};
+use actix_session::SessionExt;
+use actix_web::{FromRequest, dev::Payload};
 use email_address::EmailAddress;
 use secrecy::SecretString;
 use std::future::{Ready, ready};
 use std::ops::Deref;
 use uuid::Uuid;
+
+use super::session::TypedSession;
 
 #[derive(serde::Deserialize, Debug, Clone)]
 pub enum UserActionType {
@@ -44,12 +47,18 @@ impl FromRequest for UserId {
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &actix_web::HttpRequest, _: &mut Payload) -> Self::Future {
-        ready(
-            req.extensions()
-                .get::<UserId>()
-                .copied()
-                .ok_or_else(|| actix_web::error::ErrorUnauthorized("Not Authenticated")),
-        )
+        let session = TypedSession(req.get_session());
+
+        match session.get_user_id() {
+            Ok(Some(user_id)) => ready(Ok(UserId(user_id))),
+            Ok(None) => ready(Err(actix_web::error::ErrorUnauthorized(
+                "User ID not found in session",
+            ))),
+            Err(e) => ready(Err(actix_web::error::ErrorInternalServerError(format!(
+                "Failed to retrieve user ID from session: {}",
+                e
+            )))),
+        }
     }
 }
 

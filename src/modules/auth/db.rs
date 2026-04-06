@@ -63,10 +63,8 @@ pub async fn get_totp_secret_role_and_flags(
 #[tracing::instrument(name = "TOTP status", skip(pool, user_id))]
 pub async fn totp_status(
     pool: web::Data<PgPool>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
-
     let status = sqlx::query!(
         "SELECT totp_enabled FROM users WHERE user_id = $1",
         *user_id

@@ -21,14 +21,13 @@ use super::models::{
 )]
 pub async fn delete_article(
     article: web::Json<ArticleDeleteRequest>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let article_to_delete = article.0;
-    let user_id = Some(**user_id);
 
-    execute_idempotent(&request, &pool, user_id, move |tx| {
+    execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_delete_article(tx, article_to_delete).await })
     })
     .await
@@ -81,16 +80,15 @@ async fn process_delete_article(
 #[tracing::instrument(name = "Edit blog post", skip_all)]
 pub async fn edit_article(
     article_edit_request: web::Json<ArticleEditRequest>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let article_to_edit = article_edit_request.into_inner();
-    let user_id = Some(*user_id.into_inner());
 
     article_to_edit.validate().map_err(actix_web::Error::from)?;
 
-    execute_idempotent(&request, &pool, user_id, move |tx| {
+    execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_edit_article(tx, article_to_edit).await })
     })
     .await
@@ -173,14 +171,13 @@ async fn process_edit_article(
 #[tracing::instrument(name = "Publish blog post", skip_all)]
 pub async fn publish_article(
     article: web::Json<ArticlePublishRequest>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let article_to_publish = article.0;
-    let user_id = Some(*user_id.into_inner());
 
-    execute_idempotent(&request, &pool, user_id, move |tx| {
+    execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_publish_article(tx, article_to_publish).await })
     })
     .await
@@ -241,16 +238,15 @@ async fn process_publish_article(
 )]
 pub async fn insert_article(
     blog_post: web::Json<ArticleForm>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     pool: web::Data<PgPool>,
     request: HttpRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
     let blog_to_post = blog_post.into_inner();
-    let user_id = Some(**user_id);
 
     blog_to_post.validate().map_err(actix_web::Error::from)?;
 
-    execute_idempotent(&request, &pool, user_id, move |tx| {
+    execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_new_article(tx, blog_to_post).await })
     })
     .await

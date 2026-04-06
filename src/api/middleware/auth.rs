@@ -1,5 +1,5 @@
 use actix_web::{
-    FromRequest, HttpMessage,
+    FromRequest,
     body::MessageBody,
     cookie::{Cookie, SameSite},
     dev::{ServiceRequest, ServiceResponse},
@@ -10,7 +10,7 @@ use actix_web::{
 use uuid::Uuid;
 
 use crate::core::{e500, unauthorized};
-use crate::modules::auth::{TypedSession, UserId, UserRole};
+use crate::modules::auth::{TypedSession, UserRole};
 
 const XSRF_COOKIE_NAME: &str = "XSRF-TOKEN";
 const XSRF_HEADER_NAME: &str = "X-XSRF-TOKEN";
@@ -34,8 +34,7 @@ pub async fn reject_unauthenticated(
     // so the stored value will always be deserializable as Uuid, and calling unwrap()
     // on get_user_id is acceptable. A panic here is in effect, equivalent to the
     // session middleware not being configured.
-    if let Some(user_id) = session.get_user_id().map_err(e500)? {
-        req.extensions_mut().insert(UserId(user_id));
+    if let Some(_) = session.get_user_id().map_err(e500)? {
         next.call(req).await
     } else {
         let response = unauthorized();

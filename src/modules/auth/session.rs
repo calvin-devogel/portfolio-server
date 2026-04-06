@@ -6,7 +6,7 @@ use uuid::Uuid;
 use super::models::UserRole;
 
 // wrapper type for session
-pub struct TypedSession(Session);
+pub struct TypedSession(pub Session);
 
 #[allow(clippy::missing_errors_doc)]
 impl TypedSession {

@@ -108,14 +108,13 @@ pub struct MessagePatchRequest {
 )]
 pub async fn patch_message(
     message: web::Json<MessagePatchRequest>,
-    user_id: web::ReqData<UserId>,
+    user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let message_to_patch = message.0;
-    let user_id = Some(**user_id);
 
-    execute_idempotent(&request, &pool, user_id, move |tx| {
+    execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_patch_message(tx, message_to_patch).await })
     })
     .await
