@@ -4,8 +4,8 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::telemetry::spawn_blocking_with_tracing;
-use crate::utils::e500;
+use crate::core::spawn_blocking_with_tracing;
+use crate::core::e500;
 
 use super::crypto::compute_password_hash;
 use super::models::{RoleUpdate, StoredCredentials, TotpQuery, User, UserId, UserRole};

@@ -251,7 +251,7 @@ impl ArticleEditRequest {
 
 #[cfg(test)]
 mod test {
-    use crate::types::article::CarouselImage;
+    use super::CarouselImage;
 
     use super::ArticleSection;
 

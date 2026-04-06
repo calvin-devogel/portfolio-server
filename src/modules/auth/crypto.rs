@@ -1,4 +1,4 @@
-use crate::{errors::AuthError, telemetry::spawn_blocking_with_tracing};
+use crate::{errors::AuthError, core::spawn_blocking_with_tracing};
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},

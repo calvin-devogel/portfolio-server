@@ -2,7 +2,7 @@ use crate::helpers::spawn_app;
 use actix_web::HttpResponse;
 use portfolio_server::{
     errors::IdempotencyError::{self, RequestInFlight},
-    idempotency::{
+    api::idempotency::{
         IdempotencyKey, NextAction, execute_idempotent_with, get_saved_response, save_response,
         try_processing,
     },

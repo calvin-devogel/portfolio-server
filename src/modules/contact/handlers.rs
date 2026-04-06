@@ -1,13 +1,171 @@
-use actix_web::{HttpRequest, HttpResponse, web};
-use email_address::EmailAddress;
-use sqlx::{PgPool, Postgres, Transaction};
-use std::ops::Deref;
-use std::str::FromStr;
+use actix_web::{HttpResponse, HttpRequest, web};
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::configuration::MessageRateLimitSettings;
+use email_address::EmailAddress;
+use std::ops::Deref;
+use std::str::FromStr;
+
+use crate::core::MessageRateLimitSettings;
 use crate::errors::ContactSubmissionError;
-use crate::idempotency::execute_idempotent;
+
+use crate::{
+    errors::MessageGetError,
+    core::{PaginationMeta, PaginationQuery},
+};
+
+use sqlx::{PgPool, Postgres, Transaction};
+
+use crate::{errors::MessagePatchError, api::idempotency::execute_idempotent, modules::auth::UserId};
+
+
+// query messages in page form, minimum 0, maximum 20 per page
+// on read, should set the message_read column to TRUE
+// admin should be able to delete, highlight (star) messages
+// does this need any other functionality?
+
+#[derive(serde::Serialize)]
+struct MessageRecord {
+    message_id: Uuid,
+    email: String,
+    sender_name: String,
+    message_text: String,
+    created_at: DateTime<Utc>,
+    read_message: Option<bool>,
+}
+
+#[derive(serde::Serialize)]
+struct MessagesResponse {
+    // Keep your old top-level list key:
+    messages: Vec<MessageRecord>, // <- use your existing message DTO type
+
+    // Keep old pagination keys:
+    page: i64,
+    page_size: i64,
+    total_items: i64,
+    total_pages: i64,
+}
+
+#[tracing::instrument(name = "Get messages with pagination", skip(pool))]
+pub async fn get_messages(
+    query: web::Query<PaginationQuery>,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let q = query.into_inner();
+    let page_size = q.page_size();
+    let offset = q.offset();
+    // total count
+    let total_count = sqlx::query_scalar!("SELECT COUNT(*) FROM messages")
+        .fetch_one(pool.as_ref())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get message count: {e:?}");
+            MessageGetError::TotalCount
+        })?
+        .unwrap_or(0);
+
+    let messages = sqlx::query_as!(
+        MessageRecord,
+        r#"
+        SELECT message_id, email, sender_name, message_text, created_at, read_message
+        FROM messages
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2"#,
+        page_size,
+        offset
+    )
+    .fetch_all(pool.as_ref())
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to fetch messages: {e:?}");
+        actix_web::error::ErrorInternalServerError("Failed to retrieve messages")
+    })?;
+
+    let meta = PaginationMeta::from_total(total_count, &q);
+
+    let response = MessagesResponse {
+        messages,
+        page: meta.page,
+        page_size: meta.page_size,
+        total_items: meta.total_items,
+        total_pages: meta.total_pages,
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[derive(serde::Deserialize)]
+pub struct MessagePatchRequest {
+    message_id: Uuid,
+    read: bool,
+}
+
+#[tracing::instrument(
+    name = "Update message",
+    skip_all,
+    fields(user_id = %*user_id, message_id = %message.message_id)
+)]
+pub async fn patch_message(
+    message: web::Json<MessagePatchRequest>,
+    user_id: web::ReqData<UserId>,
+    request: HttpRequest,
+    pool: web::Data<PgPool>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let message_to_patch = message.0;
+    let user_id = Some(**user_id);
+
+    execute_idempotent(&request, &pool, user_id, move |tx| {
+        Box::pin(async move { process_patch_message(tx, message_to_patch).await })
+    })
+    .await
+}
+
+#[allow(clippy::future_not_send)]
+async fn process_patch_message(
+    transaction: &mut Transaction<'static, Postgres>,
+    message: MessagePatchRequest,
+) -> Result<HttpResponse, actix_web::Error> {
+    let message_id = message.message_id;
+    let is_read = message.read;
+
+    let result = sqlx::query!(
+        r#"
+        UPDATE messages
+        SET read_message = $2
+        WHERE message_id = $1
+        "#,
+        message_id,
+        is_read
+    )
+    .execute(transaction.as_mut())
+    .await
+    .map_err(|e| {
+        tracing::warn!("Message update query failed");
+        MessagePatchError::UnexpectedError(anyhow::anyhow!("Message update query failed: {e:?}"))
+    })?;
+
+    match result.rows_affected() {
+        1 => {
+            tracing::info!("Message {} updated successfully", message_id);
+            Ok(HttpResponse::Accepted().finish())
+        }
+        0 => {
+            tracing::warn!("Message not found: {}", message_id);
+            Err(MessagePatchError::MessageNotFound.into())
+        }
+        rows => {
+            tracing::error!(
+                "Unexpected rows affected: {} for message_id: {}",
+                rows,
+                message_id
+            );
+            Err(MessagePatchError::UnexpectedError(anyhow::anyhow!(
+                "Unexpected rows affected: {rows}"
+            ))
+            .into())
+        }
+    }
+}
 
 #[derive(serde::Deserialize)]
 pub struct MessageForm {

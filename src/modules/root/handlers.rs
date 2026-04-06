@@ -7,3 +7,7 @@ pub async fn root() -> HttpResponse {
         .content_type(ContentType::html())
         .body(html)
 }
+
+pub async fn health_check() -> HttpResponse {
+    HttpResponse::Ok().finish()
+}

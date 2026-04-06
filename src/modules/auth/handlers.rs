@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use totp_rs::{Algorithm, Secret, TOTP};
 
-use super::crypto::{compute_password_hash, decrypt, validate_credentials};
+use super::crypto::{compute_password_hash, decrypt, encrypt, validate_credentials};
 use super::db::{change_password, get_totp_secret_role_and_flags, get_username_by_id};
 use super::models::{
     AcceptInvitationParams, ChangePasswordBody, CreateUser, Credentials, DisableTotpRequest,
@@ -17,10 +17,10 @@ use super::models::{
 };
 use super::session::TypedSession;
 
-use crate::idempotency::execute_idempotent;
-use crate::startup::ApplicationBaseUrl;
+use crate::api::idempotency::execute_idempotent;
+use crate::api::startup::ApplicationBaseUrl;
 
-use crate::utils::e500;
+use crate::core::e500;
 
 #[allow(clippy::missing_errors_doc)]
 #[allow(clippy::future_not_send)]
@@ -191,7 +191,7 @@ pub async fn totp_confirm(
         .totp_secret
         .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progres"))?;
     let secret_b32 =
-        String::from_utf8(crate::crypto::decrypt(&encryption_key.0, &encrypted).map_err(e500)?)
+        String::from_utf8(decrypt(&encryption_key.0, &encrypted).map_err(e500)?)
             .map_err(e500)?;
 
     let totp = TOTP::new(
@@ -281,7 +281,7 @@ pub async fn totp_setup(
     // generate a secret and encode
     let secret = Secret::generate_secret();
     let secret_b32 = secret.to_encoded().to_string();
-    let encrypted = crate::crypto::encrypt(&encryption_key.0, secret_b32.as_bytes())
+    let encrypted = encrypt(&encryption_key.0, secret_b32.as_bytes())
         .context("Failed to encrypt TOTP secret")
         .map_err(e500)?;
 
