@@ -1,20 +1,18 @@
-use actix_web::{HttpResponse, web};
-use anyhow::Context;
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
+use sqlx::postgres::PgQueryResult;
 use uuid::Uuid;
 
-use crate::core::e500;
 use crate::core::spawn_blocking_with_tracing;
 
 use super::crypto::compute_password_hash;
-use super::models::{RoleUpdate, StoredCredentials, TotpQuery, User, UserId, UserRole};
+use super::models::{StoredCredentials, TotpQuery, User, UserRole};
 
 #[tracing::instrument(name = "Get stored credentials", skip(username, pool))]
 pub async fn get_stored_credentials(
     username: &str,
     pool: &PgPool,
-) -> Result<Option<StoredCredentials>, anyhow::Error> {
+) -> Result<Option<StoredCredentials>, sqlx::Error> {
     let row = sqlx::query!(
         r#"
         SELECT user_id, password_hash, totp_enabled, must_change_password, role as "role: UserRole"
@@ -24,9 +22,9 @@ pub async fn get_stored_credentials(
         username,
     )
     .fetch_optional(pool)
-    .await
-    .context("Failed to perform a query to retrieve stored credentials.")?
-    .map(|row| {
+    .await?;
+
+    Ok(row.map(|row| {
         (
             row.user_id,
             SecretString::new(row.password_hash.into()),
@@ -34,51 +32,39 @@ pub async fn get_stored_credentials(
             row.must_change_password,
             row.role.unwrap_or(UserRole::User),
         )
-    });
-    Ok(row)
+    }))
 }
 
 #[tracing::instrument(name = "Get TOTP secret, role, and flags", skip(user_id, pool))]
 pub async fn get_totp_secret_role_and_flags(
     user_id: Uuid,
     pool: &PgPool,
-) -> Result<Option<TotpQuery>, anyhow::Error> {
+) -> Result<Option<TotpQuery>, sqlx::Error> {
     let row = sqlx::query!(
         r#"SELECT totp_secret, role as "role: UserRole", must_change_password FROM users WHERE user_id = $1"#,
         user_id
     )
-    .fetch_one(pool)
-    .await
-    .context("Failed to fetch TOTP secret")?;
+    .fetch_optional(pool)
+    .await?;
 
-    let user_role = row.role.unwrap_or(UserRole::User);
-
-    Ok(row.totp_secret.map(|secret| TotpQuery {
-        secret,
-        role: user_role,
-        must_change_password: row.must_change_password,
+    Ok(row.and_then(|r| {
+        Some(TotpQuery {
+            secret: r.totp_secret?,
+            role: r.role.unwrap_or(UserRole::User),
+            must_change_password: r.must_change_password,
+        })
     }))
 }
 
-#[tracing::instrument(name = "TOTP status", skip(pool, user_id))]
-pub async fn totp_status(
-    pool: web::Data<PgPool>,
-    user_id: UserId,
-) -> Result<HttpResponse, actix_web::Error> {
-    let status = sqlx::query!(
-        "SELECT totp_enabled FROM users WHERE user_id = $1",
-        *user_id
-    )
-    .fetch_one(pool.as_ref())
-    .await
-    .context("Failed to retrieve totp status")
-    .map_err(e500)?;
-
-    Ok(HttpResponse::Ok().json(serde_json::json!({ "totp_enabled": status.totp_enabled })))
+#[tracing::instrument(name = "Get TOTP status", skip(pool, user_id))]
+pub async fn is_totp_enabled(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
+    sqlx::query_scalar!("SELECT totp_enabled FROM users WHERE user_id = $1", user_id)
+        .fetch_one(pool)
+        .await
 }
 
-pub async fn get_all_users(pool: web::Data<PgPool>) -> Result<HttpResponse, actix_web::Error> {
-    let users = sqlx::query_as!(
+pub async fn query_users(pool: &PgPool) -> Result<Vec<User>, sqlx::Error> {
+    sqlx::query_as!(
         User,
         r#"
         SELECT
@@ -88,53 +74,38 @@ pub async fn get_all_users(pool: web::Data<PgPool>) -> Result<HttpResponse, acti
             must_change_password
         FROM users"#
     )
-    .fetch_all(pool.get_ref())
+    .fetch_all(pool)
     .await
-    .map_err(actix_web::error::ErrorInternalServerError)?;
-
-    Ok(HttpResponse::Ok().json(users))
 }
 
-pub async fn get_username_by_id(
-    pool: web::Data<PgPool>,
-    user_id: Uuid,
-) -> Result<String, actix_web::Error> {
+pub async fn get_username_by_id(pool: &PgPool, user_id: Uuid) -> Result<String, sqlx::Error> {
     sqlx::query_scalar!("SELECT username FROM users WHERE user_id = $1", user_id)
-        .fetch_one(pool.get_ref())
+        .fetch_one(pool)
         .await
-        .map_err(actix_web::error::ErrorInternalServerError)
 }
 
-pub async fn set_user_role(
-    pool: web::Data<PgPool>,
-    user_id: web::Path<Uuid>,
-    new_role: web::Json<RoleUpdate>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
-    let new_role = new_role.into_inner();
-
+pub async fn update_user_role(
+    pool: &PgPool,
+    user_id: Uuid,
+    new_role: UserRole,
+) -> Result<PgQueryResult, sqlx::Error> {
     sqlx::query!(
         r#"
         UPDATE users
         SET role = $1
         WHERE user_id = $2::UUID
         "#,
-        new_role.role as UserRole,
+        new_role as UserRole,
         user_id,
     )
-    .execute(pool.get_ref())
+    .execute(pool)
     .await
-    .map_err(actix_web::error::ErrorInternalServerError)?;
-
-    Ok(HttpResponse::Ok().finish())
 }
 
-pub async fn reset_password(
-    pool: web::Data<PgPool>,
-    user_id: web::Path<Uuid>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let user_id = user_id.into_inner();
-
+pub async fn force_password_reset(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<PgQueryResult, sqlx::Error> {
     sqlx::query!(
         r#"
         UPDATE users
@@ -143,24 +114,23 @@ pub async fn reset_password(
         "#,
         user_id,
     )
-    .execute(pool.get_ref())
+    .execute(pool)
     .await
-    .map_err(actix_web::error::ErrorInternalServerError)?;
-
-    Ok(HttpResponse::Ok().finish())
 }
 
 #[tracing::instrument(name = "Change password", skip(password, pool))]
 /// # Errors
 /// errors from anywhere in this function are handled by `anyhow` and passed up the pipeline
+#[tracing::instrument(name = "Change password", skip(password, pool))]
 pub async fn change_password(
     user_id: Uuid,
     password: SecretString,
     pool: &PgPool,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), sqlx::Error> {
     let password_hash = spawn_blocking_with_tracing(move || compute_password_hash(&password))
-        .await?
-        .context("Failed to compute password hash")?;
+        .await
+        .expect("Blocking task panicked")
+        .expect("Failed to compute password hash");
 
     sqlx::query!(
         r#"
@@ -172,7 +142,7 @@ pub async fn change_password(
         user_id
     )
     .execute(pool)
-    .await
-    .context("Failed to change the user's password in the database.")?;
+    .await?;
+
     Ok(())
 }

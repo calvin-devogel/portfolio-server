@@ -20,6 +20,12 @@ impl ResponseError for AuthError {
     }
 }
 
+impl From<sqlx::Error> for AuthError {
+    fn from(e: sqlx::Error) -> Self {
+        AuthError::UnexpectedError(anyhow::anyhow!(e))
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

@@ -5,15 +5,19 @@ use rand::{RngExt, distr::Alphanumeric};
 use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 use totp_rs::Secret;
+use uuid::Uuid;
 
 use super::crypto::{
     build_totp, compute_password_hash, encrypt, sha256_hash, totp_from_encrypted,
     validate_credentials,
 };
-use super::db::{change_password, get_totp_secret_role_and_flags, get_username_by_id};
+use super::db::{
+    change_password, force_password_reset, get_totp_secret_role_and_flags, get_username_by_id,
+    is_totp_enabled, query_users, update_user_role,
+};
 use super::models::{
     AcceptInvitationParams, ChangePasswordBody, CreateUser, Credentials, DisableTotpRequest,
-    TotpEncryptionKey, TotpQuery, TotpRequest, UserId,
+    RoleUpdate, TotpEncryptionKey, TotpQuery, TotpRequest, UserId,
 };
 use super::session::TypedSession;
 
@@ -21,6 +25,24 @@ use crate::api::idempotency::execute_idempotent;
 use crate::api::startup::ApplicationBaseUrl;
 
 use crate::core::e500;
+
+// Basic Auth Handlers (checks, login, logout)
+#[allow(clippy::future_not_send)]
+#[tracing::instrument(name = "Check if authenticated", skip(session))]
+pub async fn check_auth(session: TypedSession) -> HttpResponse {
+    match session.get_user_id() {
+        Ok(Some(_)) => {
+            // renew session on each check_auth to extend TTL
+            session.renew();
+            let user_role = session.get_user_role();
+            match user_role {
+                Ok(Some(role)) => HttpResponse::Ok().json(role.to_string()),
+                _ => HttpResponse::Unauthorized().finish(),
+            }
+        }
+        _ => HttpResponse::Unauthorized().finish(),
+    }
+}
 
 #[allow(clippy::missing_errors_doc)]
 #[allow(clippy::future_not_send)]
@@ -66,22 +88,87 @@ pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Er
     Ok(HttpResponse::Ok().finish())
 }
 
-// I feel like this should be extended
-#[allow(clippy::future_not_send)]
-#[tracing::instrument(name = "Check if authenticated", skip(session))]
-pub async fn check_auth(session: TypedSession) -> HttpResponse {
-    match session.get_user_id() {
-        Ok(Some(_)) => {
-            // renew session on each check_auth to extend TTL
-            session.renew();
-            let user_role = session.get_user_role();
-            match user_role {
-                Ok(Some(role)) => HttpResponse::Ok().json(role.to_string()),
-                _ => HttpResponse::Unauthorized().finish(),
-            }
-        }
-        _ => HttpResponse::Unauthorized().finish(),
+// TOTP Handlers
+
+#[tracing::instrument(name = "TOTP setup", skip(pool, user_id, encryption_key))]
+pub async fn totp_setup(
+    pool: web::Data<PgPool>,
+    user_id: UserId,
+    encryption_key: web::Data<TotpEncryptionKey>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let totp_enabled = is_totp_enabled(pool.as_ref(), *user_id)
+        .await
+        .map_err(e500)?;
+
+    if totp_enabled {
+        return Ok(HttpResponse::Conflict().finish());
     }
+
+    // generate a secret and encode
+    let secret = Secret::generate_secret();
+    let secret_b32 = secret.to_encoded().to_string();
+    let encrypted = encrypt(&encryption_key.0, secret_b32.as_bytes())
+        .context("Failed to encrypt TOTP secret")
+        .map_err(e500)?;
+
+    sqlx::query!(
+        "UPDATE users SET totp_secret = $1 WHERE user_id = $2",
+        encrypted as Vec<u8>,
+        *user_id,
+    )
+    .execute(pool.as_ref())
+    .await
+    .context("Failed to store pending TOTP secret")
+    .map_err(e500)?;
+
+    let totp = build_totp(secret_b32, *user_id).map_err(e500)?;
+
+    let otpauth_uri = totp.get_url();
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "otpauth_uri": otpauth_uri })))
+}
+
+#[tracing::instrument(name = "TOTP confirm", skip(pool, user_id, request, encryption_key))]
+pub async fn totp_confirm(
+    request: web::Json<TotpRequest>,
+    pool: web::Data<PgPool>,
+    user_id: UserId,
+    encryption_key: web::Data<TotpEncryptionKey>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let row = sqlx::query!(
+        "SELECT totp_secret, totp_enabled FROM users WHERE user_id =  $1",
+        *user_id,
+    )
+    .fetch_one(pool.as_ref())
+    .await
+    .context("Failed to fetch TOTP state")
+    .map_err(e500)?;
+
+    // reject if already enabled or no secret
+    if row.totp_enabled {
+        return Ok(HttpResponse::Conflict().finish());
+    }
+
+    let encrypted = row
+        .totp_secret
+        .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progress"))?;
+
+    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id.0).map_err(e500)?;
+
+    if !totp.check_current(&request.code).map_err(e500)? {
+        return Ok(HttpResponse::Unauthorized().finish());
+    }
+
+    sqlx::query!(
+        "UPDATE users SET totp_enabled = TRUE WHERE user_id = $1",
+        *user_id
+    )
+    .execute(pool.as_ref())
+    .await
+    .context("Failed to enable TOTP")
+    .map_err(e500)?;
+
+    Ok(HttpResponse::Ok().finish())
 }
 
 #[allow(clippy::future_not_send)]
@@ -123,49 +210,6 @@ pub async fn verify_totp(
     }
 }
 
-#[tracing::instrument(name = "TOTP confirm", skip(pool, user_id, request, encryption_key))]
-pub async fn totp_confirm(
-    request: web::Json<TotpRequest>,
-    pool: web::Data<PgPool>,
-    user_id: UserId,
-    encryption_key: web::Data<TotpEncryptionKey>,
-) -> Result<HttpResponse, actix_web::Error> {
-    let row = sqlx::query!(
-        "SELECT totp_secret, totp_enabled FROM users WHERE user_id =  $1",
-        *user_id,
-    )
-    .fetch_one(pool.as_ref())
-    .await
-    .context("Failed to fetch TOTP state")
-    .map_err(e500)?;
-
-    // reject if already enabled or no secret
-    if row.totp_enabled {
-        return Ok(HttpResponse::Conflict().finish());
-    }
-
-    let encrypted = row
-        .totp_secret
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progres"))?;
-
-    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id.0).map_err(e500)?;
-
-    if !totp.check_current(&request.code).map_err(e500)? {
-        return Ok(HttpResponse::Unauthorized().finish());
-    }
-
-    sqlx::query!(
-        "UPDATE users SET totp_enabled = TRUE WHERE user_id = $1",
-        *user_id
-    )
-    .execute(pool.as_ref())
-    .await
-    .context("Failed to enable TOTP")
-    .map_err(e500)?;
-
-    Ok(HttpResponse::Ok().finish())
-}
-
 #[tracing::instrument(name = "TOTP disable", skip(pool, user_id, request))]
 pub async fn totp_disable(
     request: web::Json<DisableTotpRequest>,
@@ -200,47 +244,28 @@ pub async fn totp_disable(
     Ok(HttpResponse::Ok().finish())
 }
 
-#[tracing::instrument(name = "TOTP setup", skip(pool, user_id, encryption_key))]
-pub async fn totp_setup(
+#[tracing::instrument(name = "TOTP status", skip(pool, user_id))]
+pub async fn totp_status(
     pool: web::Data<PgPool>,
     user_id: UserId,
-    encryption_key: web::Data<TotpEncryptionKey>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let status = sqlx::query!(
-        "SELECT totp_enabled FROM users WHERE user_id = $1",
-        *user_id
-    )
-    .fetch_one(pool.as_ref())
-    .await
-    .context("Failed to get totp status")
-    .map_err(e500)?;
-
-    if status.totp_enabled {
-        return Ok(HttpResponse::Conflict().finish());
-    }
-
-    // generate a secret and encode
-    let secret = Secret::generate_secret();
-    let secret_b32 = secret.to_encoded().to_string();
-    let encrypted = encrypt(&encryption_key.0, secret_b32.as_bytes())
-        .context("Failed to encrypt TOTP secret")
+    let enabled = is_totp_enabled(pool.as_ref(), user_id.0)
+        .await
+        .context("Failed to query TOTP status")
         .map_err(e500)?;
 
-    sqlx::query!(
-        "UPDATE users SET totp_secret = $1 WHERE user_id = $2",
-        encrypted as Vec<u8>,
-        *user_id,
-    )
-    .execute(pool.as_ref())
-    .await
-    .context("Failed to store pending TOTP secret")
-    .map_err(e500)?;
+    Ok(HttpResponse::Ok().json(serde_json::json!({ "totp_enabled": enabled })))
+}
 
-    let totp = build_totp(secret_b32, *user_id).map_err(e500)?;
+// User Management
 
-    let otpauth_uri = totp.get_url();
+pub async fn get_all_users(pool: web::Data<PgPool>) -> Result<HttpResponse, actix_web::Error> {
+    let users = query_users(pool.as_ref())
+        .await
+        .context("Failed to query users from the database.")
+        .map_err(e500)?;
 
-    Ok(HttpResponse::Ok().json(serde_json::json!({ "otpauth_uri": otpauth_uri })))
+    Ok(HttpResponse::Ok().json(users))
 }
 
 #[tracing::instrument(name = "Create user invitation", skip_all)]
@@ -306,33 +331,6 @@ async fn process_create_new_user(
     Ok(HttpResponse::Ok().json(response_data))
 }
 
-pub async fn update_user_password(
-    pool: web::Data<PgPool>,
-    body: web::Json<ChangePasswordBody>,
-    user_id: UserId,
-) -> Result<HttpResponse, AuthError> {
-    let body = body.into_inner();
-
-    // First, we need to validate the current password
-    let credentials = Credentials {
-        username: get_username_by_id(pool.clone(), *user_id)
-            .await
-            .map_err(|e| anyhow::anyhow!(e.to_string()))
-            .context("Failed to retrieve username for user ID.")
-            .map_err(AuthError::UnexpectedError)?,
-        password: body.current_password.clone(),
-    };
-
-    validate_credentials(credentials, &pool).await?;
-
-    // If validation succeeds, we can proceed to change the password
-    change_password(*user_id, body.new_password, pool.get_ref())
-        .await
-        .context("Failed to change password.")
-        .map_err(AuthError::UnexpectedError)?;
-
-    Ok(HttpResponse::Accepted().finish())
-}
 #[tracing::instrument(name = "Accept user invitation", skip_all)]
 pub async fn accept_invitation(
     params: web::Json<AcceptInvitationParams>,
@@ -405,6 +403,57 @@ pub async fn accept_invitation(
 
     Ok(HttpResponse::Ok().finish())
 }
+
+pub async fn update_user_password(
+    pool: web::Data<PgPool>,
+    body: web::Json<ChangePasswordBody>,
+    user_id: UserId,
+) -> Result<HttpResponse, AuthError> {
+    let body = body.into_inner();
+
+    let credentials = Credentials {
+        // Just borrow the pool with .as_ref(), pass auth error up cleanly
+        username: get_username_by_id(pool.as_ref(), *user_id)
+            .await
+            .map_err(|e| AuthError::UnexpectedError(anyhow::anyhow!(e)))?,
+        password: body.current_password.clone(),
+    };
+
+    validate_credentials(credentials, &pool).await?;
+
+    change_password(*user_id, body.new_password, pool.as_ref())
+        .await
+        .map_err(|e| AuthError::UnexpectedError(anyhow::anyhow!(e)))?;
+
+    Ok(HttpResponse::Accepted().finish())
+}
+
+pub async fn set_user_role(
+    pool: web::Data<PgPool>,
+    user_id: web::Path<Uuid>,
+    new_role: web::Json<RoleUpdate>,
+) -> Result<HttpResponse, actix_web::Error> {
+    let params = new_role.into_inner();
+
+    update_user_role(pool.get_ref(), *user_id, params.role)
+        .await
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+pub async fn reset_password(
+    pool: web::Data<PgPool>,
+    user_id: web::Path<Uuid>,
+) -> Result<HttpResponse, actix_web::Error> {
+    force_password_reset(pool.get_ref(), *user_id)
+        .await
+        .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+// Helpers
 
 fn ok_must_change(must_change_password: bool) -> HttpResponse {
     if must_change_password {
