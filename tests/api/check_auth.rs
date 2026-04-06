@@ -1,7 +1,7 @@
 use crate::helpers::spawn_app;
 use portfolio_server::{
-    authentication::{Credentials, change_password, validate_credentials_with_verifier},
     errors::AuthError,
+    modules::auth::{Credentials, change_password, validate_credentials_with_verifier},
 };
 use secrecy::ExposeSecret;
 
