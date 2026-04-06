@@ -3,10 +3,16 @@ use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    errors::BlogError, api::idempotency::execute_idempotent, modules::auth::{UserId, TypedSession}, core::{PaginationQuery, PaginationMeta, PaginatedResponse},
+    api::idempotency::execute_idempotent,
+    core::{PaginatedResponse, PaginationMeta, PaginationQuery},
+    errors::BlogError,
+    modules::auth::{TypedSession, UserId},
 };
 
-use super::models::{ArticleEditRequest, ArticlePublishRequest, ArticleForm, ArticleId, ArticleResponse, ArticleDeleteRequest, ArticleRecord, ArticleRecordRaw};
+use super::models::{
+    ArticleDeleteRequest, ArticleEditRequest, ArticleForm, ArticleId, ArticlePublishRequest,
+    ArticleRecord, ArticleRecordRaw, ArticleResponse,
+};
 
 #[tracing::instrument(
     name = "Delete blog post",

@@ -1,5 +1,5 @@
-mod handlers;
 mod db;
+mod handlers;
 mod models;
 
 pub use db::*;

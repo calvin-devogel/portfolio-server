@@ -1,4 +1,4 @@
-use crate::{errors::AuthError, core::spawn_blocking_with_tracing};
+use crate::{core::spawn_blocking_with_tracing, errors::AuthError};
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -9,7 +9,10 @@ use argon2::{
     password_hash::{SaltString, rand_core::OsRng as RandOsRng},
 };
 use secrecy::{ExposeSecret, SecretString};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
+use totp_rs::{Algorithm as TotpAlgorithm, Secret, TOTP};
+use uuid::Uuid;
 
 use super::db::get_stored_credentials;
 use super::models::{Credentials, UserDetails, UserRole};
@@ -167,4 +170,37 @@ mod tests {
                 .contains("Failed to parse hash in PHC string format.")
         );
     }
+}
+
+pub fn sha256_hash(input: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(input.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+pub fn build_totp(secret_b32: String, user_id: Uuid) -> Result<TOTP, anyhow::Error> {
+    let secret_bytes = Secret::Encoded(secret_b32)
+        .to_bytes()
+        .map_err(|e| anyhow::anyhow!("Invalid base32 secret: {e}"))?;
+
+    Ok(TOTP::new(
+        TotpAlgorithm::SHA1,
+        6,
+        1,
+        30,
+        secret_bytes,
+        None,
+        user_id.to_string(),
+    )
+    .map_err(|e| anyhow::anyhow!("Failed to create TOTP instance: {}", e))?)
+}
+
+pub fn totp_from_encrypted(
+    key: &[u8; 32],
+    encrypted: &[u8],
+    user_id: Uuid,
+) -> Result<TOTP, anyhow::Error> {
+    let totp_secret = String::from_utf8(decrypt(key, encrypted)?)
+        .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
+    build_totp(totp_secret, user_id)
 }

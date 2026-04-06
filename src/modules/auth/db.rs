@@ -4,8 +4,8 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::core::spawn_blocking_with_tracing;
 use crate::core::e500;
+use crate::core::spawn_blocking_with_tracing;
 
 use super::crypto::compute_password_hash;
 use super::models::{RoleUpdate, StoredCredentials, TotpQuery, User, UserId, UserRole};
@@ -17,7 +17,7 @@ pub async fn get_stored_credentials(
 ) -> Result<Option<StoredCredentials>, anyhow::Error> {
     let row = sqlx::query!(
         r#"
-        SELECT user_id, password_hash, totp_enabled, must_change_password, role::TEXT
+        SELECT user_id, password_hash, totp_enabled, must_change_password, role as "role: UserRole"
         FROM users
         WHERE username = $1
         "#,
@@ -32,9 +32,7 @@ pub async fn get_stored_credentials(
             SecretString::new(row.password_hash.into()),
             row.totp_enabled,
             row.must_change_password,
-            row.role
-                .and_then(|role| role.parse::<UserRole>().ok())
-                .unwrap_or(UserRole::User),
+            row.role.unwrap_or(UserRole::User),
         )
     });
     Ok(row)
@@ -46,18 +44,14 @@ pub async fn get_totp_secret_role_and_flags(
     pool: &PgPool,
 ) -> Result<Option<TotpQuery>, anyhow::Error> {
     let row = sqlx::query!(
-        r#"SELECT totp_secret, role::TEXT, must_change_password FROM users WHERE user_id = $1"#,
+        r#"SELECT totp_secret, role as "role: UserRole", must_change_password FROM users WHERE user_id = $1"#,
         user_id
     )
     .fetch_one(pool)
     .await
     .context("Failed to fetch TOTP secret")?;
 
-    let user_role = row
-        .role
-        .as_deref()
-        .map(|role| role.parse::<UserRole>().unwrap_or(UserRole::User))
-        .unwrap_or(UserRole::User);
+    let user_role = row.role.unwrap_or(UserRole::User);
 
     Ok(row.totp_secret.map(|secret| TotpQuery {
         secret,
@@ -107,24 +101,10 @@ pub async fn get_username_by_id(
     pool: web::Data<PgPool>,
     user_id: Uuid,
 ) -> Result<String, actix_web::Error> {
-    let user = sqlx::query_as!(
-        User,
-        r#"
-        SELECT
-            user_id::TEXT as "user_id!",
-            username,
-            role::TEXT as "role!",
-            must_change_password
-        FROM users
-        WHERE user_id = $1::UUID
-        "#,
-        user_id
-    )
-    .fetch_one(pool.get_ref())
-    .await
-    .map_err(actix_web::error::ErrorInternalServerError)?;
-
-    Ok(user.username)
+    sqlx::query_scalar!("SELECT username FROM users WHERE user_id = $1", user_id)
+        .fetch_one(pool.get_ref())
+        .await
+        .map_err(actix_web::error::ErrorInternalServerError)
 }
 
 pub async fn set_user_role(

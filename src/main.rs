@@ -4,8 +4,8 @@ use std::fmt::{Debug, Display};
 use tokio::task::JoinError;
 
 use portfolio_server::{
-    core::{get_configuration, get_subscriber, init_subscriber},
     api::startup::Application,
+    core::{get_configuration, get_subscriber, init_subscriber},
 };
 
 #[tokio::main]

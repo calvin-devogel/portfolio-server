@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, HttpRequest, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
@@ -10,14 +10,15 @@ use crate::core::MessageRateLimitSettings;
 use crate::errors::ContactSubmissionError;
 
 use crate::{
-    errors::MessageGetError,
     core::{PaginationMeta, PaginationQuery},
+    errors::MessageGetError,
 };
 
 use sqlx::{PgPool, Postgres, Transaction};
 
-use crate::{errors::MessagePatchError, api::idempotency::execute_idempotent, modules::auth::UserId};
-
+use crate::{
+    api::idempotency::execute_idempotent, errors::MessagePatchError, modules::auth::UserId,
+};
 
 // query messages in page form, minimum 0, maximum 20 per page
 // on read, should set the message_read column to TRUE

@@ -18,26 +18,20 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
-use crate::{
-    core::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
-};
+use crate::core::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings};
 
 use crate::api::middleware::{csrf_protection, reject_non_admin, reject_unauthenticated};
 use crate::modules::auth::{
-    accept_invitation, check_auth, create_user, get_all_users, login, logout, reset_password,
-    set_user_role, totp_confirm, totp_disable, totp_setup, totp_status, update_user_password,
-    verify_totp, TotpEncryptionKey,
+    TotpEncryptionKey, accept_invitation, check_auth, create_user, get_all_users, login, logout,
+    reset_password, set_user_role, totp_confirm, totp_disable, totp_setup, totp_status,
+    update_user_password, verify_totp,
 };
 use crate::modules::blog::{
     delete_article, edit_article, get_articles, insert_article, publish_article,
 };
 use crate::modules::chat::chat_token;
-use crate::modules::contact::{
-    get_messages, patch_message, post_message
-};
-use crate::modules::root::{
-    health_check, root
-};
+use crate::modules::contact::{get_messages, patch_message, post_message};
+use crate::modules::root::{health_check, root};
 
 #[derive(serde::Deserialize, Clone)]
 struct UtilConfig {

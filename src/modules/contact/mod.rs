@@ -1,7 +1,7 @@
+mod db;
 mod handlers;
 mod models;
-mod db;
 
+pub use db::*;
 pub use handlers::*;
 pub use models::*;
-pub use db::*;

@@ -9,8 +9,8 @@ use actix_web::{
 };
 use uuid::Uuid;
 
-use crate::modules::auth::{UserId, TypedSession, UserRole};
 use crate::core::{e500, unauthorized};
+use crate::modules::auth::{TypedSession, UserId, UserRole};
 
 const XSRF_COOKIE_NAME: &str = "XSRF-TOKEN";
 const XSRF_HEADER_NAME: &str = "X-XSRF-TOKEN";

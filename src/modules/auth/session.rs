@@ -43,15 +43,12 @@ impl TypedSession {
     }
 
     pub fn insert_user_role(&self, role: UserRole) -> Result<(), SessionInsertError> {
-        self.0.insert(Self::USER_ROLE_KEY, role.to_string())
+        self.0.insert(Self::USER_ROLE_KEY, role)
     }
 
     // role should output a role enum
     pub fn get_user_role(&self) -> Result<Option<UserRole>, SessionGetError> {
-        match self.0.get::<String>(Self::USER_ROLE_KEY)? {
-            Some(role_str) => Ok(role_str.parse::<UserRole>().ok()),
-            None => Ok(None),
-        }
+        self.0.get::<UserRole>(Self::USER_ROLE_KEY)
     }
 
     pub fn log_out(self) {

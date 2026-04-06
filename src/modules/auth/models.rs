@@ -62,19 +62,6 @@ pub enum UserRole {
     ChatUser,
 }
 
-impl std::str::FromStr for UserRole {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "admin" => Ok(UserRole::Admin),
-            "user" => Ok(UserRole::User),
-            "chat_user" => Ok(UserRole::ChatUser),
-            _ => Err(()),
-        }
-    }
-}
-
 impl std::fmt::Display for UserRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

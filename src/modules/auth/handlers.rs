@@ -1,15 +1,17 @@
 use crate::errors::AuthError;
 use actix_web::{
-    HttpRequest, HttpResponse, ResponseError, dev::ConnectionInfo, error::InternalError, web,
+    HttpRequest, HttpResponse, dev::ConnectionInfo, web,
 };
 use anyhow::Context;
 use rand::{RngExt, distr::Alphanumeric};
 use secrecy::{ExposeSecret, SecretString};
-use sha2::{Digest, Sha256};
 use sqlx::PgPool;
-use totp_rs::{Algorithm, Secret, TOTP};
+use totp_rs::Secret;
 
-use super::crypto::{compute_password_hash, decrypt, encrypt, validate_credentials};
+use super::crypto::{
+    build_totp, compute_password_hash, encrypt, sha256_hash, totp_from_encrypted,
+    validate_credentials,
+};
 use super::db::{change_password, get_totp_secret_role_and_flags, get_username_by_id};
 use super::models::{
     AcceptInvitationParams, ChangePasswordBody, CreateUser, Credentials, DisableTotpRequest,
@@ -33,49 +35,28 @@ pub async fn login(
     request: web::Form<Credentials>,
     pool: web::Data<PgPool>,
     session: TypedSession,
-) -> Result<HttpResponse, InternalError<AuthError>> {
-    let credentials = request.into_inner();
+) -> Result<HttpResponse, AuthError> {
+    let (user_id, totp_enabled, must_change_password, user_role) =
+        validate_credentials(request.0, &pool)
+            .await?;
 
-    tracing::Span::current().record("username", tracing::field::display(&credentials.username));
+    tracing::Span::current().record("user_id", tracing::field::display(&user_id));
+    session.renew();
 
-    match validate_credentials(credentials, &pool).await {
-        Ok((user_id, totp_enabled, must_change_password, user_role)) => {
-            tracing::Span::current().record("user_id", tracing::field::display(&user_id));
-            session.renew();
+    if totp_enabled {
+        session.clear_user_id();
+        session
+            .insert_mfa_pending_user_id(user_id)
+            .map_err(|e| AuthError::UnexpectedError(e.into()))?;
 
-            if totp_enabled {
-                session.clear_user_id();
-                session
-                    .insert_mfa_pending_user_id(user_id)
-                    .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
+        Ok(HttpResponse::Accepted().json(serde_json::json!({ "mfa_required": true })))
+    } else {
+        session.insert_user_id(user_id)
+            .map_err(|e| AuthError::UnexpectedError(e.into()))?;
+        session.insert_user_role(user_role)
+            .map_err(|e| AuthError::UnexpectedError(e.into()))?;
 
-                Ok(HttpResponse::Accepted().json(serde_json::json!({ "mfa_required": true })))
-            } else {
-                session
-                    .insert_user_id(user_id)
-                    .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
-                session
-                    .insert_user_role(user_role)
-                    .map_err(|e| login_error(AuthError::UnexpectedError(e.into())))?;
-
-                if must_change_password {
-                    Ok(
-                        HttpResponse::Ok()
-                            .json(serde_json::json!({ "must_change_password": true })),
-                    )
-                } else {
-                    Ok(HttpResponse::Ok().finish())
-                }
-            }
-        }
-        Err(e) => {
-            let e = match e {
-                AuthError::RateLimitExceeded => AuthError::RateLimitExceeded,
-                AuthError::InvalidCredentials(_) => AuthError::InvalidCredentials(e.into()),
-                AuthError::UnexpectedError(_) => AuthError::UnexpectedError(e.into()),
-            };
-            Err(login_error(e))
-        }
+        Ok(ok_must_change(must_change_password))
     }
 }
 
@@ -84,11 +65,6 @@ pub async fn login(
 pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Error> {
     session.log_out();
     Ok(HttpResponse::Ok().finish())
-}
-
-fn login_error(e: AuthError) -> InternalError<AuthError> {
-    let response = HttpResponse::build(e.status_code()).finish();
-    InternalError::from_response(e, response)
 }
 
 // I feel like this should be extended
@@ -136,29 +112,13 @@ pub async fn verify_totp(
             actix_web::error::ErrorUnauthorized(format!("TOTP not configured for user: {user_id}"))
         })?;
 
-    let totp_secret =
-        String::from_utf8(decrypt(&encryption_key.0, &encrypted).map_err(e500)?).map_err(e500)?;
-
-    let totp = TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1,
-        30,
-        Secret::Encoded(totp_secret).to_bytes().map_err(e500)?,
-        None,
-        user_id.to_string(),
-    )
-    .map_err(e500)?;
+    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id).map_err(e500)?;
 
     if totp.check_current(&request.code).unwrap_or(false) {
         session.clear_mfa_pending();
         session.insert_user_id(user_id).map_err(e500)?;
         session.insert_user_role(user_role).map_err(e500)?;
-        if must_change_password {
-            Ok(HttpResponse::Ok().json(serde_json::json!({ "must_change_password": true })))
-        } else {
-            Ok(HttpResponse::Ok().finish())
-        }
+        Ok(ok_must_change(must_change_password))
     } else {
         Ok(HttpResponse::Unauthorized().finish())
     }
@@ -190,20 +150,8 @@ pub async fn totp_confirm(
     let encrypted = row
         .totp_secret
         .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progres"))?;
-    let secret_b32 =
-        String::from_utf8(decrypt(&encryption_key.0, &encrypted).map_err(e500)?)
-            .map_err(e500)?;
 
-    let totp = TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1,
-        30,
-        Secret::Encoded(secret_b32).to_bytes().map_err(e500)?,
-        None,
-        user_id.to_string(),
-    )
-    .map_err(e500)?;
+    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id.0).map_err(e500)?;
 
     if !totp.check_current(&request.code).map_err(e500)? {
         return Ok(HttpResponse::Unauthorized().finish());
@@ -295,16 +243,7 @@ pub async fn totp_setup(
     .context("Failed to store pending TOTP secret")
     .map_err(e500)?;
 
-    let totp = TOTP::new(
-        Algorithm::SHA1,
-        6,
-        1,
-        30,
-        secret.to_bytes().map_err(e500)?,
-        None,
-        user_id.to_string(),
-    )
-    .map_err(e500)?;
+    let totp = build_totp(secret_b32, *user_id).map_err(e500)?;
 
     let otpauth_uri = totp.get_url();
 
@@ -343,9 +282,7 @@ async fn process_create_new_user(
         .collect();
 
     // hash the token
-    let mut hasher = Sha256::new();
-    hasher.update(raw_token.as_bytes());
-    let token_hash = hex::encode(hasher.finalize());
+    let token_hash = sha256_hash(&raw_token);
 
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
     let invitation_id = uuid::Uuid::new_v4();
@@ -358,7 +295,7 @@ async fn process_create_new_user(
         invitation_id,
         new_user.email,
         "user".to_string(), // default to "user" role for invitations, admin can change later
-        token_hash.to_string(),
+        token_hash,
         expires_at,
     )
     .execute(transaction.as_mut())
@@ -410,9 +347,7 @@ pub async fn accept_invitation(
     params: web::Json<AcceptInvitationParams>,
     pool: web::Data<PgPool>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let mut hasher = Sha256::new();
-    hasher.update(params.token.as_bytes());
-    let token_hash = hex::encode(hasher.finalize());
+    let token_hash = sha256_hash(&params.token);
 
     // don't need idempotency here since invitation accepts are one-time
     let mut tx = pool
@@ -478,4 +413,12 @@ pub async fn accept_invitation(
     }
 
     Ok(HttpResponse::Ok().finish())
+}
+
+fn ok_must_change(must_change_password: bool) -> HttpResponse {
+    if must_change_password {
+        HttpResponse::Ok().json(serde_json::json!({ "must_change_password": true }))
+    } else {
+        HttpResponse::Ok().finish()
+    }
 }
