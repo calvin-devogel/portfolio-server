@@ -4,7 +4,7 @@ use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
 
-use crate::{authentication::UserId, startup::JwtPrivateKey, utils::e500};
+use crate::{modules::auth::UserId, startup::JwtPrivateKey, utils::e500};
 
 // non-semantic names dangit!
 // SignalR maps sub to ClaimTypes.NameIdentifier

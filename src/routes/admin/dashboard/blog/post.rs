@@ -3,9 +3,9 @@ use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
-    authentication::UserId,
     errors::BlogError,
     idempotency::execute_idempotent,
+    modules::auth::UserId,
     types::article::{ArticleForm, ArticleId, ArticleResponse},
 };
 

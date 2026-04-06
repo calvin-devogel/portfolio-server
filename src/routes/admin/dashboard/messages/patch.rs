@@ -2,7 +2,7 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
-use crate::{authentication::UserId, errors::MessagePatchError, idempotency::execute_idempotent};
+use crate::{errors::MessagePatchError, idempotency::execute_idempotent, modules::auth::UserId};
 
 #[derive(serde::Deserialize)]
 pub struct MessagePatchRequest {

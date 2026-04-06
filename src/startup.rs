@@ -19,17 +19,18 @@ use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
 use crate::{
-    authentication::{
-        cross_site_request_forgery_protection, reject_anonymous_users, reject_non_admin,
-        update_user_password,
-    },
     configuration::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings},
     routes::{
-        accept_invitation, chat_token, check_auth, create_user, delete_article, edit_article,
-        get_all_users, get_articles, get_messages, health_check, insert_article, login, logout,
-        patch_message, post_message, publish_article, reset_password, root, set_user_role,
-        totp_confirm, totp_disable, totp_setup, totp_status, verify_totp,
+        chat_token, delete_article, edit_article, get_articles, get_messages, health_check,
+        insert_article, patch_message, post_message, publish_article, root,
     },
+};
+
+use crate::api::middleware::{csrf_protection, reject_non_admin, reject_unauthenticated};
+use crate::modules::auth::{
+    accept_invitation, check_auth, create_user, get_all_users, login, logout, reset_password,
+    set_user_role, totp_confirm, totp_disable, totp_setup, totp_status, update_user_password,
+    verify_totp, TotpEncryptionKey,
 };
 
 #[derive(serde::Deserialize, Clone)]
@@ -49,9 +50,6 @@ struct SecretsConfig {
 // wrapper type for SecretString
 #[derive(Clone)]
 pub struct HmacSecret(pub SecretString);
-
-#[derive(Clone)]
-pub struct TotpEncryptionKey(pub [u8; 32]);
 
 #[derive(Clone)]
 pub struct JwtPrivateKey(pub SecretString);
@@ -213,7 +211,7 @@ async fn run(
             .route("/health_check", web::get().to(health_check))
             .service(
                 web::scope("/v1")
-                    .wrap(from_fn(cross_site_request_forgery_protection))
+                    .wrap(from_fn(csrf_protection))
                     .wrap(
                         SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
                             .cookie_same_site(SameSite::Strict)
@@ -257,13 +255,13 @@ async fn run(
                     .route("/accept", web::post().to(accept_invitation))
                     .service(
                         web::scope("/chat_token")
-                            .wrap(from_fn(reject_anonymous_users))
+                            .wrap(from_fn(reject_unauthenticated))
                             // UserId needs to implement FromRequest?
                             .route("", web::get().to(chat_token)),
                     )
                     .service(
                         web::scope("/change_password")
-                            .wrap(from_fn(reject_anonymous_users))
+                            .wrap(from_fn(reject_unauthenticated))
                             .route("", web::post().to(update_user_password)),
                     )
                     .service(
@@ -295,7 +293,7 @@ async fn run(
                                     .supports_credentials()
                                     .max_age(util_config.cors.max_age)
                             })
-                            .wrap(from_fn(reject_anonymous_users))
+                            .wrap(from_fn(reject_unauthenticated))
                             .wrap(from_fn(reject_non_admin))
                             .route("/create_user", web::post().to(create_user))
                             .route("/users", web::get().to(get_all_users))

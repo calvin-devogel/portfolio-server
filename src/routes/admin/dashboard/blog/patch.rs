@@ -3,10 +3,10 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 
 use crate::{
-    authentication::UserId,
     // ArticleError?
     errors::BlogError,
     idempotency::execute_idempotent,
+    modules::auth::UserId,
     types::article::{ArticleEditRequest, ArticlePublishRequest},
 };
 

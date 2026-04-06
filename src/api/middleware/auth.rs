@@ -9,10 +9,10 @@ use actix_web::{
 };
 use uuid::Uuid;
 
+use crate::modules::auth::UserId;
 use crate::session_state::TypedSession;
 use crate::types::user::UserRole;
 use crate::utils::{e500, unauthorized};
-use crate::modules::auth::UserId;
 
 const XSRF_COOKIE_NAME: &str = "XSRF-TOKEN";
 const XSRF_HEADER_NAME: &str = "X-XSRF-TOKEN";
@@ -79,9 +79,7 @@ pub async fn csrf_protection(
     );
 
     if !is_safe {
-        let cookie_val = req
-            .cookie(XSRF_COOKIE_NAME)
-            .map(|c| c.value().to_string());
+        let cookie_val = req.cookie(XSRF_COOKIE_NAME).map(|c| c.value().to_string());
         let header_val = req
             .headers()
             .get(XSRF_HEADER_NAME)
@@ -101,7 +99,7 @@ pub async fn csrf_protection(
         .map_or_else(|| Uuid::new_v4().to_string(), |c| c.value().to_string());
 
     let mut res = next.call(req).await?;
-    
+
     let cookie = Cookie::build(XSRF_COOKIE_NAME, token)
         .path("/")
         .secure(true)

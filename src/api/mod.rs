@@ -1,3 +1,1 @@
-mod middleware;
-
-pub use middleware::reject_unauthenticated;
+pub mod middleware;
