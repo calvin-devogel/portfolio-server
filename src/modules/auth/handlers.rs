@@ -14,7 +14,6 @@ use super::db::{
     change_password, force_password_reset, get_totp_secret_role_and_flags, get_username_by_id,
     is_totp_enabled, query_users, update_user_role,
 };
-use super::errors::AuthError;
 use super::models::{
     AcceptInvitationParams, ChangePasswordBody, CreateUser, Credentials, DisableTotpRequest,
     RoleUpdate, TotpEncryptionKey, TotpQuery, TotpRequest, UserId,
@@ -24,7 +23,7 @@ use super::session::TypedSession;
 use crate::api::idempotency::execute_idempotent;
 use crate::api::startup::ApplicationBaseUrl;
 
-use crate::core::e500;
+use crate::core::error::{e500, Auth};
 
 // Basic Auth Handlers (checks, login, logout)
 #[allow(clippy::future_not_send)]
@@ -55,7 +54,7 @@ pub async fn login(
     request: web::Form<Credentials>,
     pool: web::Data<PgPool>,
     session: TypedSession,
-) -> Result<HttpResponse, AuthError> {
+) -> Result<HttpResponse, Auth> {
     let (user_id, totp_enabled, must_change_password, user_role) =
         validate_credentials(request.0, &pool).await?;
 
@@ -66,16 +65,16 @@ pub async fn login(
         session.clear_user_id();
         session
             .insert_mfa_pending_user_id(user_id)
-            .map_err(|e| AuthError::UnexpectedError(e.into()))?;
+            .map_err(|e| Auth::Unexpected(e.into()))?;
 
         Ok(HttpResponse::Accepted().json(serde_json::json!({ "mfa_required": true })))
     } else {
         session
             .insert_user_id(user_id)
-            .map_err(|e| AuthError::UnexpectedError(e.into()))?;
+            .map_err(|e| Auth::Unexpected(e.into()))?;
         session
             .insert_user_role(user_role)
-            .map_err(|e| AuthError::UnexpectedError(e.into()))?;
+            .map_err(|e| Auth::Unexpected(e.into()))?;
 
         Ok(ok_must_change(must_change_password))
     }
@@ -408,14 +407,14 @@ pub async fn update_user_password(
     pool: web::Data<PgPool>,
     body: web::Json<ChangePasswordBody>,
     user_id: UserId,
-) -> Result<HttpResponse, AuthError> {
+) -> Result<HttpResponse, Auth> {
     let body = body.into_inner();
 
     let credentials = Credentials {
         // Just borrow the pool with .as_ref(), pass auth error up cleanly
         username: get_username_by_id(pool.as_ref(), *user_id)
             .await
-            .map_err(|e| AuthError::UnexpectedError(anyhow::anyhow!(e)))?,
+            .map_err(|e| Auth::Unexpected(e.into()))?,
         password: body.current_password.clone(),
     };
 
@@ -423,7 +422,7 @@ pub async fn update_user_password(
 
     change_password(*user_id, body.new_password, pool.as_ref())
         .await
-        .map_err(|e| AuthError::UnexpectedError(anyhow::anyhow!(e)))?;
+        .map_err(|e| Auth::Unexpected(e.into()))?;
 
     Ok(HttpResponse::Accepted().finish())
 }

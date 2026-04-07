@@ -9,7 +9,7 @@ use actix_web::{
 };
 use uuid::Uuid;
 
-use crate::core::{e500, unauthorized};
+use crate::core::error::{e500, unauthorized};
 use crate::modules::auth::{TypedSession, UserRole};
 
 const XSRF_COOKIE_NAME: &str = "XSRF-TOKEN";

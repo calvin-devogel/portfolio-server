@@ -5,7 +5,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use uuid::Uuid;
 
-use crate::errors::ContactSubmissionError;
+use crate::core::error::Contact;
 
 #[derive(serde::Serialize)]
 pub struct MessageRecord {
@@ -79,12 +79,12 @@ pub struct ValidatedMessage {
 }
 
 impl MessageForm {
-    pub fn validate(&self) -> Result<ValidatedMessage, ContactSubmissionError> {
+    pub fn validate(&self) -> Result<ValidatedMessage, Contact> {
         let validated_email = EmailAddress::from_str(&self.email)
             .map(|r| r.email())
             .map_err(|e| {
                 tracing::warn!(email = %self.email, error = ?e, "Email validation failed");
-                ContactSubmissionError::InvalidEmail
+                Contact::InvalidEmail
             })?;
 
         let trimmed_name = self.validate_name()?;
@@ -97,26 +97,26 @@ impl MessageForm {
         })
     }
 
-    fn validate_name(&self) -> Result<String, ContactSubmissionError> {
+    fn validate_name(&self) -> Result<String, Contact> {
         let trimmed_name = self.sender_name.trim();
         if trimmed_name.len() < 2 || trimmed_name.len() > 100 {
             tracing::warn!(
                 name_length = trimmed_name.len(),
                 "Name validation failed: length out of bounds"
             );
-            return Err(ContactSubmissionError::NameLength);
+            return Err(Contact::NameLength);
         }
         Ok(trimmed_name.to_string())
     }
 
-    fn validate_message(&self) -> Result<String, ContactSubmissionError> {
+    fn validate_message(&self) -> Result<String, Contact> {
         let trimmed_message = self.message_text.trim();
         if trimmed_message.len() < 10 || trimmed_message.len() > 5000 {
             tracing::warn!(
                 message_length = trimmed_message.len(),
-                "Message validation failed: length out of bound"
+                "Message validation failed: length out of bounds"
             );
-            return Err(ContactSubmissionError::MessageLength);
+            return Err(Contact::MessageLength);
         }
         Ok(trimmed_message.to_string())
     }
@@ -126,7 +126,7 @@ impl MessageForm {
 mod test {
     // Note: Kept your unit tests here unchanged mapping to ValidatedMessage
     use super::MessageForm;
-    use crate::errors::ContactSubmissionError;
+    use crate::core::error::Contact;
 
     #[test]
     fn message_form_validation_works() {
@@ -137,7 +137,7 @@ mod test {
         };
 
         let result = form_with_bad_email.validate();
-        assert!(matches!(result, Err(ContactSubmissionError::InvalidEmail)));
+        assert!(matches!(result, Err(Contact::InvalidEmail)));
 
         // ... [keep rest of tests unchanged]
     }

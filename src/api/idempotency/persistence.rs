@@ -1,11 +1,11 @@
-use crate::errors::IdempotencyError;
-
 use super::IdempotencyKey;
 use actix_web::{HttpRequest, HttpResponse, body::to_bytes, http::StatusCode};
 use sqlx::{Executor, PgPool, Postgres, Transaction};
 use std::future::Future;
 use std::pin::Pin;
 use uuid::Uuid;
+
+use crate::core::error::Idempotency;
 
 // header pair type for sqlx
 #[derive(Debug, sqlx::Type)]
@@ -32,14 +32,14 @@ pub enum NextAction {
 ///     - if n_inserted_rows > 0, return (NextAction::StartProcessing, Some(transaction))
 ///     - if n_inserted_rows == 0, return *either*
 ///         - (NextAction::ReturnSavedResponse(response), None) or
-///         - (IdempotencyError::RequestInFlight)
+///         - (Idempotency::InFlight)
 /// so no path allows the match statement to find (NextAction, None)
 pub async fn try_processing(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
     operation: &str,
-) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), IdempotencyError> {
+) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), Idempotency> {
     let mut transaction = pool.begin().await?;
     let query = sqlx::query!(
         r#"
@@ -63,7 +63,7 @@ pub async fn try_processing(
         let saved_response = get_saved_response(pool, idempotency_key, user_id, operation).await?;
 
         saved_response.map_or_else(
-            || Err(IdempotencyError::RequestInFlight),
+            || Err(Idempotency::InFlight),
             |response| Ok((NextAction::ReturnSavedResponse(response), None)),
         )
     }
@@ -81,7 +81,7 @@ pub async fn save_response(
     user_id: Option<Uuid>,
     operation: &str,
     http_response: HttpResponse,
-) -> Result<HttpResponse, IdempotencyError> {
+) -> Result<HttpResponse, Idempotency> {
     let (response_head, body) = http_response.into_parts();
     // MessageBody::Error is not `Send` + `Sync`
     // -> it does not play nicely with `anyhow`
@@ -176,20 +176,20 @@ pub async fn get_saved_response(
 // if duplicate -> `get_saved_response()` returns the cached result immediately
 
 // there are a few places where an idempotency key is required, use this wherever it is
-pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, IdempotencyError> {
+pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, Idempotency> {
     let idempotency_key: IdempotencyKey = request
         .headers()
         .get("Idempotency-Key")
         .and_then(|header| header.to_str().ok())
         .ok_or_else(|| {
             tracing::warn!("Missing Idempotency-Key header");
-            IdempotencyError::MissingIdempotencyKey
+            Idempotency::MissingKey
         })?
         .to_string()
         .try_into()
         .map_err(|e| {
             tracing::warn!(error = ?e, "Invalid idempotency key format");
-            IdempotencyError::InvalidKeyFormat
+            Idempotency::InvalidKey
         })?;
 
     Ok(idempotency_key)
@@ -207,7 +207,7 @@ where
     F: for<'a> FnOnce(
         &'a mut Transaction<'static, Postgres>,
     ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
-    E: From<IdempotencyError> + std::fmt::Debug,
+    E: From<Idempotency> + std::fmt::Debug,
 {
     execute_idempotent_with(request, pool, user_id, action, |pool, key, user_id, op| {
         Box::pin(async move {
@@ -298,7 +298,7 @@ where
                 + 'p,
         >,
     >,
-    E: From<IdempotencyError> + std::fmt::Debug,
+    E: From<Idempotency> + std::fmt::Debug,
 {
     let key = get_idempotency_key(request).map_err(E::from)?;
     let operation = format!("{}:{}", request.method().as_str(), request.path());
@@ -318,8 +318,8 @@ where
             Ok(response)
         }
 
-        (NextAction::StartProcessing, None) => Err(E::from(IdempotencyError::UnexpectedError(
-            anyhow::anyhow!("Missing transaction for StartProcessing"),
+        (NextAction::StartProcessing, None) => Err(E::from(Idempotency::Unexpected(
+            anyhow::anyhow!("Invariant violation: StartProcessing with missing transaction"),
         ))),
     }
 }

@@ -1,7 +1,8 @@
 use crate::helpers::spawn_app;
 use portfolio_server::modules::auth::{
-    AuthError, Credentials, change_password, validate_credentials_with_verifier,
+    Credentials, change_password, validate_credentials_with_verifier,
 };
+use portfolio_server::core::error::Auth as AuthError;
 use secrecy::ExposeSecret;
 
 #[tokio::test]

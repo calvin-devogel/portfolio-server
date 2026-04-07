@@ -1,4 +1,43 @@
-use actix_web::{HttpResponse, http::header::LOCATION};
+use actix_web::{HttpResponse, http::StatusCode};
+
+#[derive(serde::Serialize, Debug)]
+pub struct ApiErrorResponse {
+    pub code: &'static str,
+    pub message: String,
+}
+
+pub trait AppError: std::error::Error + 'static {
+    fn code(&self) -> &'static str;
+    fn client_message(&self) -> &'static str;
+    fn http_status(&self) -> StatusCode;
+    fn override_message(&self) -> Option<&str> { None }
+}
+
+pub fn build_error_response(e: &impl AppError) -> HttpResponse {
+    let status = e.http_status();
+
+    if status.is_server_error() {
+        tracing::error!(
+            error.code = e.code(),
+            error.detail = %e,
+            error.source = ?std::error::Error::source(e),
+            "Internal server error"
+        );
+    } else {
+        tracing::warn!(
+            error.code = e.code(),
+            error.detail = %e,
+            "Client error"
+        );
+    }
+
+    HttpResponse::build(status).json(ApiErrorResponse {
+        code: e.code(),
+        message: e.override_message().unwrap_or_else(|| e.client_message()).to_owned(),
+    })
+}
+
+use actix_web::{http::header::LOCATION};
 
 // http 400 aka client-side error
 pub fn e400<T>(e: T) -> actix_web::Error

@@ -5,7 +5,7 @@ use portfolio_server::{
         IdempotencyKey, NextAction, execute_idempotent_with, get_saved_response, save_response,
         try_processing,
     },
-    errors::IdempotencyError::{self, RequestInFlight},
+    core::error::Idempotency as IdempotencyError,
 };
 use uuid::Uuid;
 
@@ -247,7 +247,7 @@ async fn try_processing_returns_request_in_flight_when_response_not_yet_saved() 
     .expect("Failed to seed in-flight request");
 
     let result = try_processing(&app.db_pool, &key, None, ANONYMOUS_OPERATION).await;
-    assert!(matches!(result, Err(RequestInFlight)));
+    assert!(matches!(result, Err(IdempotencyError::InFlight)));
 }
 
 #[tokio::test]
@@ -268,7 +268,7 @@ async fn missing_transaction_operation_is_handled() {
     )
     .await;
 
-    assert!(matches!(result, Err(IdempotencyError::UnexpectedError(_))));
+    assert!(matches!(result, Err(IdempotencyError::Unexpected(_))));
 }
 
 #[tokio::test]
@@ -285,13 +285,13 @@ async fn process_fn_error_is_handled() {
         &app.db_pool,
         None,
         |_tx| Box::pin(async { Ok(HttpResponse::Ok().finish()) }),
-        |_, _, _, _| Box::pin(async { Err(IdempotencyError::RequestInFlight) }),
+        |_, _, _, _| Box::pin(async { Err(IdempotencyError::InFlight) }),
     )
     .await;
 
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
-        IdempotencyError::RequestInFlight
+        IdempotencyError::InFlight
     ));
 }

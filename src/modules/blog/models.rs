@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use std::ops::Deref;
 use uuid::Uuid;
 
-use crate::errors::BlogError;
+use crate::core::error::Blog;
 
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct CarouselImage {
@@ -27,12 +27,12 @@ pub enum ArticleSection {
 }
 
 impl ArticleSection {
-    pub fn validate(&self) -> Result<(), BlogError> {
+    pub fn validate(&self) -> Result<(), Blog> {
         match self {
             Self::Markdown { content } if content.len() > 20_000 => Err(
-                BlogError::ValidationError("Section content too large".into()),
+                Blog::Validation("Section content too large".into()),
             ),
-            Self::Carousel { slides, .. } if slides.len() > 20 => Err(BlogError::ValidationError(
+            Self::Carousel { slides, .. } if slides.len() > 20 => Err(Blog::Validation(
                 "Too many carousel slides".into(),
             )),
             _ => Ok(()),
@@ -149,7 +149,7 @@ pub struct ArticleForm {
 }
 
 impl ArticleForm {
-    pub fn validate(&self) -> Result<(), BlogError> {
+    pub fn validate(&self) -> Result<(), Blog> {
         let fields = [
             ("title", &self.title),
             ("excerpt", &self.excerpt),
@@ -158,20 +158,20 @@ impl ArticleForm {
         for (name, value) in fields {
             match name {
                 "title" if value.len() > 200 => {
-                    return Err(BlogError::ValidationError("Invalid title".into()));
+                    return Err(Blog::Validation("Invalid title".into()));
                 }
                 "excerpt" if value.len() > 1000 => {
-                    return Err(BlogError::ValidationError("Invalid excerpt".into()));
+                    return Err(Blog::Validation("Invalid excerpt".into()));
                 }
                 "author" if value.len() > 100 => {
-                    return Err(BlogError::ValidationError("Invalid author".into()));
+                    return Err(Blog::Validation("Invalid author".into()));
                 }
                 _ => {}
             }
         }
 
         if self.sections.is_empty() || self.sections.len() > 50 {
-            return Err(BlogError::ValidationError("Invalid section count".into()));
+            return Err(Blog::Validation("Invalid section count".into()));
         }
 
         for section in &self.sections {
@@ -211,7 +211,7 @@ impl ArticleEditRequest {
         self.sections.as_ref().map(serde_json::to_value).transpose()
     }
 
-    pub fn validate(&self) -> Result<(), BlogError> {
+    pub fn validate(&self) -> Result<(), Blog> {
         let fields = [
             ("title", &self.title),
             ("excerpt", &self.excerpt),
@@ -222,13 +222,13 @@ impl ArticleEditRequest {
             if let Some(val) = value {
                 match name {
                     "title" if val.len() > 200 => {
-                        return Err(BlogError::ValidationError("Invalid title".into()));
+                        return Err(Blog::Validation("Invalid title".into()));
                     }
                     "excerpt" if val.len() > 1000 => {
-                        return Err(BlogError::ValidationError("Invalid excerpt".into()));
+                        return Err(Blog::Validation("Invalid excerpt".into()));
                     }
                     "author" if val.len() > 100 => {
-                        return Err(BlogError::ValidationError("Invalid author".into()));
+                        return Err(Blog::Validation("Invalid author".into()));
                     }
                     _ => {}
                 }
@@ -237,7 +237,7 @@ impl ArticleEditRequest {
 
         if let Some(sections) = &self.sections {
             if sections.is_empty() || sections.len() > 50 {
-                return Err(BlogError::ValidationError("Invalid section count".into()));
+                return Err(Blog::Validation("Invalid section count".into()));
             }
 
             for section in sections {

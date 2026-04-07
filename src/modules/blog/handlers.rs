@@ -4,8 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     api::idempotency::execute_idempotent,
-    core::{PaginatedResponse, PaginationMeta, PaginationQuery},
-    errors::BlogError,
+    core::{PaginatedResponse, PaginationMeta, PaginationQuery, error::Blog},
     modules::auth::{TypedSession, UserId},
 };
 
@@ -29,7 +28,7 @@ pub async fn delete_article(
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let article_to_delete = article.0;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
@@ -41,10 +40,10 @@ pub async fn delete_article(
 async fn process_delete_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleDeleteRequest,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let rows = delete_article_query(transaction.as_mut(), article.post_id)
         .await
-        .map_err(|e| BlogError::UnexpectedError(e.into()))?;
+        .map_err(|e| Blog::Unexpected(e.into()))?;
 
     handle_rows_affected(rows, article.post_id, StatusCode::OK, "deleted")
 }
@@ -55,10 +54,10 @@ pub async fn edit_article(
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let article_to_edit = article_edit_request.into_inner();
 
-    article_to_edit.validate().map_err(actix_web::Error::from)?;
+    article_to_edit.validate()?;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_edit_article(tx, article_to_edit).await })
@@ -69,17 +68,17 @@ pub async fn edit_article(
 async fn process_edit_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleEditRequest,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let sections_json = article
         .sections_as_json()
-        .map_err(|e| BlogError::UnexpectedError(anyhow::anyhow!(e)))?;
+        .map_err(|e| Blog::Unexpected(e.into()))?;
 
     if article.title.is_none()
         && article.excerpt.is_none()
         && article.author.is_none()
         && sections_json.is_none()
     {
-        return Err(BlogError::BadRequest(anyhow::anyhow!("No fields provided to update")).into());
+        return Err(Blog::BadRequest("No fields provided to update".into()));
     }
 
     let rows = update_article_query(
@@ -91,7 +90,7 @@ async fn process_edit_article(
         sections_json,
     )
     .await
-    .map_err(|e| BlogError::UnexpectedError(e.into()))?;
+    .map_err(|e| Blog::Unexpected(e.into()))?;
 
     handle_rows_affected(rows, article.post_id, StatusCode::ACCEPTED, "updated")
 }
@@ -102,7 +101,7 @@ pub async fn publish_article(
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let article_to_publish = article.0;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
@@ -114,10 +113,10 @@ pub async fn publish_article(
 async fn process_publish_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticlePublishRequest,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let rows = publish_article_query(transaction.as_mut(), article.post_id, article.published)
         .await
-        .map_err(|e| BlogError::UnexpectedError(e.into()))?;
+        .map_err(|e| Blog::Unexpected(e.into()))?;
 
     handle_rows_affected(rows, article.post_id, StatusCode::ACCEPTED, "published")
 }
@@ -134,10 +133,10 @@ pub async fn insert_article(
     user_id: UserId,
     pool: web::Data<PgPool>,
     request: HttpRequest,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let blog_to_post = blog_post.into_inner();
 
-    blog_to_post.validate().map_err(actix_web::Error::from)?;
+    blog_to_post.validate()?;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
         Box::pin(async move { process_new_article(tx, blog_to_post).await })
@@ -148,11 +147,11 @@ pub async fn insert_article(
 async fn process_new_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleForm,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     let post_id = Uuid::new_v4();
     let slug = get_article_slug(&article.title);
     let sections_json = article.sections_as_json().map_err(|e| {
-        BlogError::UnexpectedError(anyhow::anyhow!("Failed to serialize sections: {e:?}"))
+        Blog::Unexpected(e.into())
     })?;
 
     tracing::Span::current().record("post_id", tracing::field::display(&post_id));
@@ -178,11 +177,11 @@ async fn process_new_article(
         }
         Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23505") => {
             tracing::warn!("Duplicate post detected");
-            Err(BlogError::DuplicatePost.into())
+            Err(Blog::DuplicatePost)
         }
         Err(e) => {
             tracing::error!("Failed to save post: {e:?}");
-            Err(BlogError::UnexpectedError(anyhow::anyhow!("Posting blog failed: {e:?}")).into())
+            Err(Blog::Unexpected(e.into()))
         }
     }
 }
@@ -201,7 +200,7 @@ fn handle_rows_affected(
     post_id: Uuid,
     success_status: StatusCode,
     context: &str,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Blog> {
     match rows {
         1 => {
             tracing::info!("Post {} {} successfully", post_id, context);
@@ -209,7 +208,7 @@ fn handle_rows_affected(
         }
         0 => {
             tracing::warn!("Blog post not found: {}", post_id);
-            Err(BlogError::PostNotFound.into())
+            Err(Blog::NotFound)
         }
         rows => {
             tracing::error!(
@@ -217,10 +216,7 @@ fn handle_rows_affected(
                 rows,
                 post_id
             );
-            Err(
-                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {rows}"))
-                    .into(),
-            )
+            Err(Blog::Unexpected(anyhow::anyhow!("Unexpected rows affected: {rows}")))
         }
     }
 }
@@ -266,7 +262,7 @@ pub async fn get_articles(
 
     let is_authenticated = session
         .get_user_id()
-        .map_err(|e| BlogError::UnexpectedError(anyhow::anyhow!(e)))?
+        .map_err(|e| Blog::Unexpected(e.into()))?
         .is_some();
 
     let on_published = if is_authenticated {
@@ -287,7 +283,7 @@ pub async fn get_articles(
         .await
         .map_err(|e| {
             tracing::error!("Failed to get blog post count: {e:?}");
-            BlogError::QueryFailed
+            Blog::Unexpected(e.into())
         })?;
 
     let articles = fetch_articles(
@@ -300,7 +296,7 @@ pub async fn get_articles(
     .await
     .map_err(|e| {
         tracing::error!("Failed to fetch or deserialize blog posts: {e:?}");
-        BlogError::UnexpectedError(e.into())
+        Blog::Unexpected(e.into())
     })?;
 
     let response = PaginatedResponse {

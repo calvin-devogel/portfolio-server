@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::{
     api::idempotency::execute_idempotent,
     core::{MessageRateLimitSettings, PaginationMeta, PaginationQuery},
-    errors::{ContactSubmissionError, MessageGetError, MessagePatchError},
+    core::error::Contact,
     modules::auth::UserId,
 };
 
@@ -29,8 +29,7 @@ pub async fn get_messages(
     let offset = q.offset();
 
     let total_count = count_messages(pool.as_ref()).await.map_err(|e| {
-        tracing::error!("Failed to get message count: {e:?}");
-        MessageGetError::TotalCount
+        Contact::Unexpected(anyhow::anyhow!("Failed to get message count: {e:?}"))
     })?;
 
     let messages = fetch_messages(pool.as_ref(), page_size, offset)
@@ -83,7 +82,7 @@ async fn process_patch_message(
         .await
         .map_err(|e| {
             tracing::warn!("Message update query failed");
-            MessagePatchError::UnexpectedError(anyhow::anyhow!(
+            Contact::Unexpected(anyhow::anyhow!(
                 "Message update query failed: {e:?}"
             ))
         })?;
@@ -95,7 +94,7 @@ async fn process_patch_message(
         }
         0 => {
             tracing::warn!("Message not found: {}", message_id);
-            Err(MessagePatchError::MessageNotFound.into())
+            Err(Contact::NotFound(message_id).into())
         }
         rows => {
             tracing::error!(
@@ -103,7 +102,7 @@ async fn process_patch_message(
                 rows,
                 message_id
             );
-            Err(MessagePatchError::UnexpectedError(anyhow::anyhow!(
+            Err(Contact::Unexpected(anyhow::anyhow!(
                 "Unexpected rows affected: {rows}"
             ))
             .into())
@@ -157,11 +156,11 @@ async fn process_new_message(
     )
     .await
     .map_err(|e| {
-        ContactSubmissionError::UnexpectedError(anyhow::anyhow!("Unexpected error: {e:?}"))
+        Contact::Unexpected(anyhow::anyhow!("Unexpected error: {e:?}"))
     })?;
 
     if !rate_ok {
-        return Err(ContactSubmissionError::RateLimitExceeded.into());
+        return Err(Contact::RateLimited.into());
     }
 
     let message_id = MessageId(Uuid::new_v4());
@@ -187,10 +186,10 @@ async fn process_new_message(
         Err(e) => {
             if e.to_string().contains("Duplicate message detected") {
                 tracing::warn!("Duplicate message detected");
-                Err(ContactSubmissionError::DuplicateMessage.into())
+                Err(Contact::Duplicate.into())
             } else {
                 tracing::error!("Failed to save message: {e:?}");
-                Err(ContactSubmissionError::UnexpectedError(e.into()).into())
+                Err(Contact::Unexpected(e.into()).into())
             }
         }
     }
