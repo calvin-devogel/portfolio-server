@@ -1,5 +1,5 @@
-use actix_web::{HttpRequest, HttpResponse, web};
-use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
+use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
@@ -11,7 +11,12 @@ use crate::{
 
 use super::models::{
     ArticleDeleteRequest, ArticleEditRequest, ArticleForm, ArticleId, ArticlePublishRequest,
-    ArticleRecord, ArticleRecordRaw, ArticleResponse,
+    ArticleResponse,
+};
+
+use super::db::{
+    count_articles, delete_article_query, fetch_articles, insert_article_query,
+    publish_article_query, update_article_query,
 };
 
 #[tracing::instrument(
@@ -33,48 +38,15 @@ pub async fn delete_article(
     .await
 }
 
-#[allow(clippy::future_not_send)]
 async fn process_delete_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleDeleteRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = article.post_id;
+    let rows = delete_article_query(transaction.as_mut(), article.post_id)
+        .await
+        .map_err(|e| BlogError::UnexpectedError(e.into()))?;
 
-    let result = sqlx::query!(
-        r#"
-        DELETE FROM blog_posts
-        WHERE post_id = $1
-        "#,
-        post_id
-    )
-    .execute(transaction.as_mut())
-    .await
-    .map_err(|e| {
-        tracing::warn!("Blog post delete query failed");
-        BlogError::UnexpectedError(anyhow::anyhow!("{e:?}"))
-    })?;
-
-    match result.rows_affected() {
-        1 => {
-            tracing::info!("Post {} deleted successfully", post_id);
-            Ok(HttpResponse::Ok().finish())
-        }
-        0 => {
-            tracing::warn!("Blog post not found: {}", post_id);
-            Err(BlogError::PostNotFound.into())
-        }
-        rows => {
-            tracing::error!(
-                "Unexpected rows affected: {} for post id: {}",
-                rows,
-                post_id
-            );
-            Err(
-                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {rows}"))
-                    .into(),
-            )
-        }
-    }
+    handle_rows_affected(rows, article.post_id, StatusCode::OK, "deleted")
 }
 
 #[tracing::instrument(name = "Edit blog post", skip_all)]
@@ -94,78 +66,34 @@ pub async fn edit_article(
     .await
 }
 
-#[allow(clippy::future_not_send)]
 async fn process_edit_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleEditRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = article.post_id;
+    let sections_json = article
+        .sections_as_json()
+        .map_err(|e| BlogError::UnexpectedError(anyhow::anyhow!(e)))?;
 
-    let mut builder = QueryBuilder::<Postgres>::new("UPDATE blog_posts SET ");
-    let mut separator = builder.separated(", ");
-
-    // macros!
-    macro_rules! push_if_some {
-        ($field:expr, $col:literal) => {
-            if let Some(val) = $field {
-                separator.push(concat!($col, "= "));
-                separator.push_bind_unseparated(val);
-            }
-        };
-    }
-
-    push_if_some!(article.title, "title");
-    push_if_some!(article.excerpt, "excerpt");
-    push_if_some!(article.author, "author");
-
-    if let Some(sections) = article.sections {
-        let sections_json = serde_json::to_value(&sections)
-            .map_err(|e| BlogError::UnexpectedError(anyhow::anyhow!(e)))?;
-        separator.push("sections = ");
-        separator.push_bind_unseparated(sections_json);
-    }
-
-    builder.push(", updated_at = NOW() WHERE post_id = ");
-    builder.push_bind(post_id);
-
-    if builder
-        .sql()
-        .contains("UPDATE blog_posts SET , updated_at = NOW() WHERE post_id = ")
+    if article.title.is_none()
+        && article.excerpt.is_none()
+        && article.author.is_none()
+        && sections_json.is_none()
     {
-        tracing::warn!("No fields to update for post {}", post_id);
         return Err(BlogError::BadRequest(anyhow::anyhow!("No fields provided to update")).into());
     }
 
-    let result = builder
-        .build()
-        .execute(transaction.as_mut())
-        .await
-        .map_err(|e| {
-            tracing::warn!("Blog post update query failed");
-            BlogError::UnexpectedError(anyhow::anyhow!("{e:?}"))
-        })?;
+    let rows = update_article_query(
+        transaction.as_mut(),
+        article.post_id,
+        article.title,
+        article.excerpt,
+        article.author,
+        sections_json,
+    )
+    .await
+    .map_err(|e| BlogError::UnexpectedError(e.into()))?;
 
-    match result.rows_affected() {
-        1 => {
-            tracing::info!("Post {} updated successfully", post_id);
-            Ok(HttpResponse::Accepted().finish())
-        }
-        0 => {
-            tracing::warn!("Blog post not found: {}", post_id);
-            Err(BlogError::PostNotFound.into())
-        }
-        rows => {
-            tracing::error!(
-                "Unexpected rows affected: {} for blog_post_id: {}",
-                rows,
-                post_id
-            );
-            Err(
-                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {rows}"))
-                    .into(),
-            )
-        }
-    }
+    handle_rows_affected(rows, article.post_id, StatusCode::ACCEPTED, "updated")
 }
 
 #[tracing::instrument(name = "Publish blog post", skip_all)]
@@ -183,50 +111,15 @@ pub async fn publish_article(
     .await
 }
 
-#[allow(clippy::future_not_send)]
 async fn process_publish_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticlePublishRequest,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = article.post_id;
-    let is_published = article.published;
+    let rows = publish_article_query(transaction.as_mut(), article.post_id, article.published)
+        .await
+        .map_err(|e| BlogError::UnexpectedError(e.into()))?;
 
-    let result = sqlx::query!(
-        r#"
-        UPDATE blog_posts
-        SET published = $2, updated_at = NOW()
-        WHERE post_id = $1"#,
-        article.post_id,
-        is_published
-    )
-    .execute(transaction.as_mut())
-    .await
-    .map_err(|e| {
-        tracing::warn!("Blog post query update failed");
-        BlogError::UnexpectedError(anyhow::anyhow!("{e:?}"))
-    })?;
-
-    match result.rows_affected() {
-        1 => {
-            tracing::info!("Post {} updated successfully", post_id);
-            Ok(HttpResponse::Accepted().finish())
-        }
-        0 => {
-            tracing::warn!("Blog post not found: {}", post_id);
-            Err(BlogError::PostNotFound.into())
-        }
-        rows => {
-            tracing::error!(
-                "Unexpected rows affected: {} for blog_post_id: {}",
-                rows,
-                post_id
-            );
-            Err(
-                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {rows}"))
-                    .into(),
-            )
-        }
-    }
+    handle_rows_affected(rows, article.post_id, StatusCode::ACCEPTED, "published")
 }
 
 #[tracing::instrument(
@@ -252,55 +145,42 @@ pub async fn insert_article(
     .await
 }
 
-#[allow(clippy::future_not_send)]
 async fn process_new_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleForm,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let post_id = ArticleId(Uuid::new_v4());
+    let post_id = Uuid::new_v4();
     let slug = get_article_slug(&article.title);
     let sections_json = article.sections_as_json().map_err(|e| {
         BlogError::UnexpectedError(anyhow::anyhow!("Failed to serialize sections: {e:?}"))
     })?;
+
     tracing::Span::current().record("post_id", tracing::field::display(&post_id));
 
-    let insert_result = sqlx::query!(
-        r#"
-        INSERT INTO blog_posts(
+    let insert_result = insert_article_query(
+        transaction.as_mut(),
         post_id,
-        title,
-        slug,
-        sections,
-        excerpt,
-        author,
-        published,
-        created_at,
-        updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, NOW(), NOW())"#,
-        *post_id,
-        article.title,
-        slug,
+        &article.title,
+        &slug,
         sections_json,
-        article.excerpt,
-        article.author
+        &article.excerpt,
+        &article.author,
     )
-    .execute(transaction.as_mut())
     .await;
 
     match insert_result {
         Ok(_) => {
             tracing::info!("Post saved successfully with: {}", post_id);
-            Ok(HttpResponse::Accepted()
-                .json(ArticleResponse::new("Post received successfully", post_id)))
+            Ok(HttpResponse::Accepted().json(ArticleResponse::new(
+                "Post received successfully",
+                ArticleId(post_id),
+            )))
+        }
+        Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23505") => {
+            tracing::warn!("Duplicate post detected");
+            Err(BlogError::DuplicatePost.into())
         }
         Err(e) => {
-            if let sqlx::Error::Database(db_err) = &e
-                && db_err.code().as_deref() == Some("23505")
-            {
-                tracing::warn!("Duplicate post detected");
-                return Err(BlogError::DuplicatePost.into());
-            }
-
             tracing::error!("Failed to save post: {e:?}");
             Err(BlogError::UnexpectedError(anyhow::anyhow!("Posting blog failed: {e:?}")).into())
         }
@@ -314,6 +194,35 @@ fn get_article_slug(title: &str) -> String {
         .filter(|c| c.is_ascii_alphabetic() || *c == '-')
         .collect::<String>()
         .to_ascii_lowercase()
+}
+
+fn handle_rows_affected(
+    rows: u64,
+    post_id: Uuid,
+    success_status: StatusCode,
+    context: &str,
+) -> Result<HttpResponse, actix_web::Error> {
+    match rows {
+        1 => {
+            tracing::info!("Post {} {} successfully", post_id, context);
+            Ok(HttpResponse::build(success_status).finish())
+        }
+        0 => {
+            tracing::warn!("Blog post not found: {}", post_id);
+            Err(BlogError::PostNotFound.into())
+        }
+        rows => {
+            tracing::error!(
+                "Unexpected rows affected: {} for post id: {}",
+                rows,
+                post_id
+            );
+            Err(
+                BlogError::UnexpectedError(anyhow::anyhow!("Unexpected rows affected: {rows}"))
+                    .into(),
+            )
+        }
+    }
 }
 
 #[cfg(test)]
@@ -374,61 +283,24 @@ pub async fn get_articles(
         .record("on_published", on_published)
         .record("slug", slug.as_deref().unwrap_or("no slug"));
 
-    let total_count = sqlx::query_scalar!(
-        r#"
-        SELECT COUNT(*)
-        FROM blog_posts 
-        WHERE 
-            (NOT $1 OR published = true)
-            AND ($2::text IS NULL OR slug = $2)
-        "#,
-        on_published,
-        slug
-    )
-    .fetch_one(pool.as_ref())
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to get blog post count: {e:?}");
-        BlogError::QueryFailed
-    })?
-    .unwrap_or(0);
+    let total_count = count_articles(pool.as_ref(), on_published, slug.as_deref())
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get blog post count: {e:?}");
+            BlogError::QueryFailed
+        })?;
 
-    let articles: Vec<ArticleRecord> = sqlx::query_as!(
-        ArticleRecordRaw,
-        r#"
-        SELECT
-            post_id,
-            title,
-            slug,
-            sections as "sections: serde_json::Value",
-            excerpt,
-            author,
-            published,
-            created_at,
-            updated_at
-        FROM blog_posts
-        WHERE
-            (NOT $1 OR published = true)
-            AND ($2::text IS NULL OR slug = $2)
-        ORDER BY created_at DESC
-        LIMIT $3 OFFSET $4"#,
+    let articles = fetch_articles(
+        pool.as_ref(),
         on_published,
-        slug,
+        slug.as_deref(),
         pagination.page_size,
-        pagination.offset()
+        pagination.offset(),
     )
-    .fetch_all(pool.as_ref())
     .await
     .map_err(|e| {
-        tracing::error!("Failed to fetch blog posts: {e:?}");
-        BlogError::UnexpectedError(anyhow::anyhow!(e))
-    })?
-    .into_iter()
-    .map(ArticleRecord::try_from)
-    .collect::<Result<Vec<_>, _>>()
-    .map_err(|e| {
-        tracing::error!("Failed to deserialize blog post sections: {e:?}");
-        BlogError::UnexpectedError(anyhow::anyhow!(e))
+        tracing::error!("Failed to fetch or deserialize blog posts: {e:?}");
+        BlogError::UnexpectedError(e.into())
     })?;
 
     let response = PaginatedResponse {

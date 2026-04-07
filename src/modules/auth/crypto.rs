@@ -1,4 +1,4 @@
-use crate::{core::spawn_blocking_with_tracing, errors::AuthError};
+use crate::core::spawn_blocking_with_tracing;
 use aes_gcm::{
     Aes256Gcm, Key, Nonce,
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -15,6 +15,7 @@ use totp_rs::{Algorithm as TotpAlgorithm, Secret, TOTP};
 use uuid::Uuid;
 
 use super::db::get_stored_credentials;
+use super::errors::AuthError;
 use super::models::{Credentials, UserDetails, UserRole};
 
 // wrapper for credential validation that uses the default hash function
@@ -183,7 +184,7 @@ pub fn build_totp(secret_b32: String, user_id: Uuid) -> Result<TOTP, anyhow::Err
         .to_bytes()
         .map_err(|e| anyhow::anyhow!("Invalid base32 secret: {e}"))?;
 
-    Ok(TOTP::new(
+    TOTP::new(
         TotpAlgorithm::SHA1,
         6,
         1,
@@ -192,7 +193,7 @@ pub fn build_totp(secret_b32: String, user_id: Uuid) -> Result<TOTP, anyhow::Err
         None,
         user_id.to_string(),
     )
-    .map_err(|e| anyhow::anyhow!("Failed to create TOTP instance: {}", e))?)
+    .map_err(|e| anyhow::anyhow!("Failed to create TOTP instance: {}", e))
 }
 
 pub fn totp_from_encrypted(

@@ -1,4 +1,3 @@
-use crate::errors::AuthError;
 use actix_web::{HttpRequest, HttpResponse, dev::ConnectionInfo, web};
 use anyhow::Context;
 use rand::{RngExt, distr::Alphanumeric};
@@ -15,6 +14,7 @@ use super::db::{
     change_password, force_password_reset, get_totp_secret_role_and_flags, get_username_by_id,
     is_totp_enabled, query_users, update_user_role,
 };
+use super::errors::AuthError;
 use super::models::{
     AcceptInvitationParams, ChangePasswordBody, CreateUser, Credentials, DisableTotpRequest,
     RoleUpdate, TotpEncryptionKey, TotpQuery, TotpRequest, UserId,
@@ -437,7 +437,7 @@ pub async fn set_user_role(
 
     update_user_role(pool.get_ref(), *user_id, params.role)
         .await
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+        .map_err(actix_web::error::ErrorInternalServerError)?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -448,7 +448,7 @@ pub async fn reset_password(
 ) -> Result<HttpResponse, actix_web::Error> {
     force_password_reset(pool.get_ref(), *user_id)
         .await
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+        .map_err(actix_web::error::ErrorInternalServerError)?;
 
     Ok(HttpResponse::Ok().finish())
 }

@@ -23,8 +23,8 @@ use crate::core::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, T
 use crate::api::middleware::{csrf_protection, reject_non_admin, reject_unauthenticated};
 use crate::modules::auth::{
     TotpEncryptionKey, accept_invitation, check_auth, create_user, get_all_users, login, logout,
-    set_user_role, totp_confirm, totp_disable, totp_setup, update_user_password, verify_totp,
-    totp_status, reset_password,
+    reset_password, set_user_role, totp_confirm, totp_disable, totp_setup, totp_status,
+    update_user_password, verify_totp,
 };
 use crate::modules::blog::{
     delete_article, edit_article, get_articles, insert_article, publish_article,
