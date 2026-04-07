@@ -184,13 +184,14 @@ async fn process_new_message(
                 message_id,
             )))
         }
-        Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23505") => {
-            tracing::warn!("Duplicate message detected");
-            Err(ContactSubmissionError::DuplicateMessage.into())
-        }
         Err(e) => {
-            tracing::error!("Failed to save message: {e:?}");
-            Err(ContactSubmissionError::UnexpectedError(e.into()).into())
+            if e.to_string().contains("Duplicate message detected") {
+                tracing::warn!("Duplicate message detected");
+                Err(ContactSubmissionError::DuplicateMessage.into())
+            } else {
+                tracing::error!("Failed to save message: {e:?}");
+                Err(ContactSubmissionError::UnexpectedError(e.into()).into())
+            }
         }
     }
 }
