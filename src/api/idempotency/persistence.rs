@@ -177,22 +177,14 @@ pub async fn get_saved_response(
 
 // there are a few places where an idempotency key is required, use this wherever it is
 pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, Idempotency> {
-    let idempotency_key: IdempotencyKey = request
+    let idempotency_key = request
         .headers()
         .get("Idempotency-Key")
         .and_then(|header| header.to_str().ok())
-        .ok_or_else(|| {
-            tracing::warn!("Missing Idempotency-Key header");
-            Idempotency::MissingKey
-        })?
-        .to_string()
-        .try_into()
-        .map_err(|e| {
-            tracing::warn!(error = ?e, "Invalid idempotency key format");
-            Idempotency::InvalidKey
-        })?;
-
-    Ok(idempotency_key)
+        .ok_or(Idempotency::MissingKey)?
+        .to_string();
+        
+    IdempotencyKey::try_from(idempotency_key).map_err(Into::into)
 }
 
 // wrapper for execute_idempotent_with that calls the default process_fn

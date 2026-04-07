@@ -8,7 +8,7 @@ pub struct ApiErrorResponse {
 
 pub trait AppError: std::error::Error + 'static {
     fn code(&self) -> &'static str;
-    fn client_message(&self) -> &'static str;
+    fn client_message(&self) -> &str;
     fn http_status(&self) -> StatusCode;
     fn override_message(&self) -> Option<&str> { None }
 }

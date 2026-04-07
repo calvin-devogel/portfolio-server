@@ -23,7 +23,7 @@ use super::models::{
 pub async fn get_messages(
     query: web::Query<PaginationQuery>,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Contact> {
     let q = query.into_inner();
     let page_size = q.page_size();
     let offset = q.offset();
@@ -36,7 +36,7 @@ pub async fn get_messages(
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch messages: {e:?}");
-            actix_web::error::ErrorInternalServerError("Failed to retrieve messages")
+            Contact::Unexpected(anyhow::anyhow!("Failed to fetch messages: {e:?}"))
         })?;
 
     let meta = PaginationMeta::from_total(total_count, &q);
@@ -62,7 +62,7 @@ pub async fn patch_message(
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Contact> {
     let message_to_patch = message.0;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
@@ -75,7 +75,7 @@ pub async fn patch_message(
 async fn process_patch_message(
     transaction: &mut Transaction<'static, Postgres>,
     message: MessagePatchRequest,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Contact> {
     let message_id = message.message_id;
 
     let rows = update_message_read_status(transaction.as_mut(), message_id, message.read)
@@ -94,7 +94,7 @@ async fn process_patch_message(
         }
         0 => {
             tracing::warn!("Message not found: {}", message_id);
-            Err(Contact::NotFound(message_id).into())
+            Err(Contact::NotFound(message_id))
         }
         rows => {
             tracing::error!(
@@ -123,7 +123,7 @@ pub async fn post_message(
     pool: web::Data<PgPool>,
     request: HttpRequest,
     message_config: web::Data<MessageRateLimitSettings>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Contact> {
     let message_to_post = message.0;
     let config_for_op = message_config.clone();
 
@@ -141,7 +141,7 @@ async fn process_new_message(
     transaction: &mut Transaction<'static, Postgres>,
     config: &MessageRateLimitSettings,
     message: MessageForm,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, Contact> {
     let validated_input = message.validate()?;
 
     let max_msg = i32::try_from(config.max_messages).expect("Failed to cast config.max_messages");

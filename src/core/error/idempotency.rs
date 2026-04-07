@@ -7,7 +7,7 @@ pub enum Idempotency {
     #[error("Missing idempotency key")]
     MissingKey,
     #[error("Invalid idempotency key format")]
-    InvalidKey,
+    InvalidKey(String),
     #[error("Request is already being processed")]
     InFlight,
 
@@ -21,16 +21,16 @@ impl AppError for Idempotency {
     fn code(&self) -> &'static str {
         match self {
             Self::MissingKey => "missing_idempotency_key",
-            Self::InvalidKey => "invalid_idempotency_key",
+            Self::InvalidKey(_) => "invalid_idempotency_key",
             Self::InFlight => "request_in_flight",
             Self::Database(_) | Self::Unexpected(_) => "internal_error",
         }
     }
 
-    fn client_message(&self) -> &'static str {
+    fn client_message(&self) -> &str {
         match self {
             Self::MissingKey => "An idempotency key is required for this request.",
-            Self::InvalidKey => "The provided idempotency key is not valid.",
+            Self::InvalidKey(msg) => msg,
             Self::InFlight => "A request with this key is already being processed. Please wait and retry.",
             Self::Database(_) | Self::Unexpected(_) => {
                 "An unexpected error occurred. Please try again later."
@@ -40,7 +40,7 @@ impl AppError for Idempotency {
 
     fn http_status(&self) -> StatusCode {
         match self {
-            Self::MissingKey | Self::InvalidKey => StatusCode::BAD_REQUEST,
+            Self::MissingKey | Self::InvalidKey(_) => StatusCode::BAD_REQUEST,
             Self::InFlight => StatusCode::CONFLICT,
             Self::Database(_) | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -65,7 +65,7 @@ mod tests {
     fn test_idempotency_error_codes() {
         let err = Idempotency::MissingKey;
         assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
-        let err = Idempotency::InvalidKey;
+        let err = Idempotency::InvalidKey("Invalid key".to_string());
         assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
         let err = Idempotency::InFlight;
         assert_eq!(err.status_code(), StatusCode::CONFLICT);
