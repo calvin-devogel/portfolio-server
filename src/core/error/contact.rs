@@ -3,9 +3,9 @@ use uuid::Uuid;
 
 use crate::core::error::IdempotencyError;
 
-use super::response::{AppError, build_error_response};
+use super::response::{AppError, build_error_response, error_chain_fmt};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error)]
 pub enum ContactError {
     // validation errors, safe to surface
     #[error("Invalid email address")]
@@ -30,6 +30,12 @@ pub enum ContactError {
     Unexpected(#[from] anyhow::Error),
     #[error(transparent)]
     Idempotency(#[from] IdempotencyError),
+}
+
+impl std::fmt::Debug for ContactError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
 }
 
 impl AppError for ContactError {

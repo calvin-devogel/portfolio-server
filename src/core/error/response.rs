@@ -21,14 +21,13 @@ pub fn build_error_response(e: &impl AppError) -> HttpResponse {
     if status.is_server_error() {
         tracing::error!(
             error.code = e.code(),
-            error.detail = %e,
-            error.source = ?std::error::Error::source(e),
+            error.detail = ?e,
             "Internal server error"
         );
     } else {
         tracing::warn!(
             error.code = e.code(),
-            error.detail = %e,
+            error.detail = ?e,
             "Client error"
         );
     }

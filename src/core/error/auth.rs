@@ -1,9 +1,9 @@
 use crate::core::error::IdempotencyError;
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 
-use super::response::{AppError, build_error_response};
+use super::response::{AppError, build_error_response, error_chain_fmt};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error)]
 pub enum AuthError {
     #[error("Too many login requests")]
     RateLimited,
@@ -26,6 +26,12 @@ pub enum AuthError {
     SessionInsert(#[from] actix_session::SessionInsertError),
     #[error(transparent)]
     Unexpected(#[from] anyhow::Error),
+}
+
+impl std::fmt::Debug for AuthError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
 }
 
 impl AppError for AuthError {

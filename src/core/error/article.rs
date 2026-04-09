@@ -2,9 +2,9 @@ use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 
 use crate::core::error::IdempotencyError;
 
-use super::response::{AppError, build_error_response};
+use super::response::{AppError, build_error_response, error_chain_fmt};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error)]
 pub enum ArticleError {
     // Domain rule errors — safe to surface
     #[error("Post not found")]
@@ -25,6 +25,12 @@ pub enum ArticleError {
     Unexpected(#[from] anyhow::Error),
     #[error(transparent)]
     Idempotency(#[from] IdempotencyError),
+}
+
+impl std::fmt::Debug for ArticleError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
 }
 
 impl AppError for ArticleError {

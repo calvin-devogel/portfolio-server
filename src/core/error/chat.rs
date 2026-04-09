@@ -2,9 +2,9 @@ use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 
 use crate::core::error::AuthError;
 
-use super::response::{AppError, build_error_response};
+use super::response::{AppError, build_error_response, error_chain_fmt};
 
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error)]
 pub enum ChatError {
     #[error("JWT generation failed: {0}")]
     JwtGeneration(String),
@@ -15,6 +15,12 @@ pub enum ChatError {
     Database(#[from] sqlx::Error),
     #[error(transparent)]
     Unexpected(#[from] anyhow::Error),
+}
+
+impl std::fmt::Debug for ChatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        error_chain_fmt(self, f)
+    }
 }
 
 impl AppError for ChatError {
