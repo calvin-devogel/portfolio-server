@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE user_invitations SET consumed_at = NOW() WHERE id = $1",
+  "query": "DELETE FROM blog_posts WHERE post_id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "b916c831cad39997c777cc5b97e130c3be031d80fe867cc06b9ef1fc07763e31"
+  "hash": "37065bed1494c3874ce08efe5917da7423344ba905d523ea7da3bf49068c4669"
 }

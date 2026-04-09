@@ -56,7 +56,7 @@ impl AppError for ContactError {
             Self::NotFound(_) => "The requested message could not be found.",
             Self::Database(_) | Self::Unexpected(_) => {
                 "An unexpected error occurred. Please try again later."
-            },
+            }
             Self::Idempotency(e) => e.client_message(),
         }
     }
@@ -67,9 +67,7 @@ impl AppError for ContactError {
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::Duplicate => StatusCode::CONFLICT,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::Database(_) | Self::Unexpected(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            Self::Database(_) | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Idempotency(e) => e.http_status(),
         }
     }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT COUNT(*)\n        FROM blog_posts \n        WHERE \n            (NOT $1 OR published = true)\n            AND ($2::text IS NULL OR slug = $2)\n        ",
+  "query": "\n        SELECT COUNT(*) FROM blog_posts\n        WHERE (NOT $1 OR published = true)\n        AND ($2::text IS NULL OR slug = $2)\n        ",
   "describe": {
     "columns": [
       {
@@ -19,5 +19,5 @@
       null
     ]
   },
-  "hash": "83fb9258fccd6c87b67718007200ecbd31a988d90b12e8cf11635a9628953be3"
+  "hash": "e83135a547601489532875f1fbcbaaa72f29e98ea2eee4f1b812b98292509a3b"
 }

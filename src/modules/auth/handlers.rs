@@ -165,7 +165,7 @@ pub async fn totp_confirm(
     if !is_valid {
         return Err(AuthError::Unauthorized(
             "Invalid TOTP verification code".into(),
-        ))
+        ));
     }
 
     sqlx::query!(

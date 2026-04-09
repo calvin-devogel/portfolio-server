@@ -49,7 +49,7 @@ impl AppError for ArticleError {
             Self::Validation(_) | Self::BadRequest(_) => "",
             Self::Database(_) | Self::Unexpected(_) => {
                 "An unexpected error occurred. Please try again later."
-            },
+            }
             Self::Idempotency(e) => e.client_message(),
         }
     }
@@ -66,9 +66,7 @@ impl AppError for ArticleError {
             Self::Validation(_) | Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::DuplicatePost | Self::SlugConflict => StatusCode::CONFLICT,
-            Self::Database(_) | Self::Unexpected(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            Self::Database(_) | Self::Unexpected(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::Idempotency(e) => e.http_status(),
         }
     }
