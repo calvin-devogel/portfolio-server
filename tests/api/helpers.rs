@@ -11,10 +11,9 @@ use totp_rs::{Secret, TOTP};
 use uuid::Uuid;
 
 use portfolio_server::{
-    configuration::{DatabaseSettings, get_configuration},
-    startup::{Application, get_connection_pool},
-    telemetry::{get_subscriber, init_subscriber},
-    types::user::UserRole,
+    api::startup::{Application, get_connection_pool},
+    core::{DatabaseSettings, get_configuration, get_subscriber, init_subscriber},
+    modules::auth::UserRole,
 };
 
 // ensure the `tracing` task is only initialized once using `LazyLock`
@@ -138,8 +137,9 @@ impl TestUser {
     pub async fn enable_totp(&self, pool: &PgPool) -> TOTP {
         const SECRET_B32: &str = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PX";
         const ENCRYPTION_KEY: &[u8; 32] = b"f2e4f32183efde11831c64557303bf22";
-        let encrypted = portfolio_server::crypto::encrypt(ENCRYPTION_KEY, SECRET_B32.as_bytes())
-            .expect("failed to encrypt TOTP secret");
+        let encrypted =
+            portfolio_server::modules::auth::encrypt(ENCRYPTION_KEY, SECRET_B32.as_bytes())
+                .expect("failed to encrypt TOTP secret");
         sqlx::query!(
             "UPDATE users SET totp_secret = $1, totp_enabled = TRUE WHERE user_id = $2",
             encrypted,

@@ -148,7 +148,7 @@ async fn invalid_invitations_are_rejected() {
     });
 
     let accept_response = app.post_accept_invitation(&accept_payload).await;
-    assert_eq!(accept_response.status().as_u16(), 400);
+    assert_eq!(accept_response.status().as_u16(), 401);
 }
 
 #[tokio::test]
@@ -179,7 +179,7 @@ async fn used_invitations_cannot_be_reused() {
     assert_eq!(first_accept.status().as_u16(), 200);
 
     let second_accept = app.post_accept_invitation(&accept_payload).await;
-    assert_eq!(second_accept.status().as_u16(), 400);
+    assert_eq!(second_accept.status().as_u16(), 401);
 }
 
 #[tokio::test]
