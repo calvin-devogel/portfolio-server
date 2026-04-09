@@ -208,9 +208,6 @@ pub async fn force_password_reset(
 }
 
 #[tracing::instrument(name = "Change password", skip(password, pool))]
-/// # Errors
-/// errors from anywhere in this function are handled by `anyhow` and passed up the pipeline
-#[tracing::instrument(name = "Change password", skip(password, pool))]
 pub async fn change_password(
     user_id: Uuid,
     password: SecretString,

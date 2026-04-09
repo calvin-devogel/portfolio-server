@@ -29,7 +29,7 @@ async fn authorized_users_can_login() {
 }
 
 #[tokio::test]
-async fn unauthorized_users_cannot_access_restricted_routes() {
+async fn anonymous_users_cannot_access_restricted_routes() {
     //arrange
     let app = spawn_app().await;
 
@@ -37,7 +37,7 @@ async fn unauthorized_users_cannot_access_restricted_routes() {
     let response = app.get_messages().await;
 
     // assert
-    assert_eq!(response.status().as_u16(), 403);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 #[tokio::test]

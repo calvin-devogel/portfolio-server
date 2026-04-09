@@ -76,7 +76,7 @@ impl Application {
             db_host = %configuration.database.host,
         )
     )]
-    
+
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 

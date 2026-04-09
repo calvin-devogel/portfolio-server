@@ -65,14 +65,22 @@ pub async fn reject_non_admin(
         return next.call(req).await;
     }
 
+    if session.get_user_id().is_ok() && session.get_user_id().unwrap().is_some() {
+        tracing::warn!(
+            "Authenticated non-admin user attempted to access admin route: {}",
+            req.path()
+        );
+        return Err(AuthError::Forbidden(
+            "The user does not have permission to access this resource".to_string(),
+        )
+        .into());
+    }
+
     tracing::warn!(
-        "Non-admin user attempted to access admin route: {}",
+        "Unauthenticated user attempted to access admin route: {}",
         req.path()
     );
-    Err(AuthError::Forbidden(
-        "The user does not have permission to access this resource".to_string(),
-    )
-    .into())
+    Err(AuthError::Unauthorized("The user has not logged in".to_string()).into())
 }
 
 #[allow(clippy::future_not_send)]

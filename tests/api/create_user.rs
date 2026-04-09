@@ -121,7 +121,7 @@ async fn anonymous_users_cannot_change_user_roles() {
     let response = app
         .patch_user_role(Uuid::new_v4().to_string().as_str(), &role_update)
         .await;
-    assert_eq!(response.status().as_u16(), 403);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 #[tokio::test]
@@ -134,7 +134,7 @@ async fn anonymous_users_cannot_create_invitations() {
     });
 
     let response = app.post_create_user(&new_user).await;
-    assert_eq!(response.status().as_u16(), 403);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 #[tokio::test]
@@ -237,7 +237,7 @@ async fn anonymous_users_cannot_query_usernames() {
     let app = spawn_app().await;
 
     let response = app.get_user_names(None).await;
-    assert_eq!(response.status().as_u16(), 403);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 #[tokio::test]

@@ -1,7 +1,7 @@
 use crate::helpers::spawn_app;
 
 #[tokio::test]
-async fn unauthorized_users_cannot_post_articles() {
+async fn anonymous_users_cannot_post_articles() {
     let app = spawn_app().await;
 
     let article = serde_json::json!({
@@ -12,7 +12,7 @@ async fn unauthorized_users_cannot_post_articles() {
     });
 
     let response = app.post_article(&article).await;
-    assert_eq!(response.status().as_u16(), 403);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 #[tokio::test]

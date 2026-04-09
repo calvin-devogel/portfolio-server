@@ -98,7 +98,7 @@ async fn unauthorized_users_cannot_patch_messages() {
 
     // act 4: attempt to patch
     let response = app.patch_message(&patch_body).await;
-    assert_eq!(response.status().as_u16(), 403);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 // test what happen when when the message is not found

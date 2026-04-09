@@ -122,9 +122,9 @@ impl MessageForm {
     }
 }
 
+// unit tests
 #[cfg(test)]
 mod test {
-    // Note: Kept your unit tests here unchanged mapping to ValidatedMessage
     use super::MessageForm;
     use crate::core::error::ContactError;
 
@@ -136,9 +136,64 @@ mod test {
             message_text: "This is a test message.".to_string(),
         };
 
-        let result = form_with_bad_email.validate();
+        let mut result = form_with_bad_email.validate();
         assert!(matches!(result, Err(ContactError::InvalidEmail)));
 
-        // ... [keep rest of tests unchanged]
+        let form_with_bad_name = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "N".to_string(),
+            message_text: "This is a test message".to_string(),
+        };
+
+        result = form_with_bad_name.validate();
+        assert!(matches!(result, Err(ContactError::NameLength)));
+
+        let form_with_whitespace_name = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "   ".to_string(),
+            message_text: "This is a test message".to_string(),
+        };
+
+        result = form_with_whitespace_name.validate();
+        assert!(matches!(result, Err(ContactError::NameLength)));
+
+        let form_with_bad_message = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "John Doe".to_string(),
+            message_text: "T".to_string(),
+        };
+
+        result = form_with_bad_message.validate();
+        assert!(matches!(result, Err(ContactError::MessageLength)));
+
+        let good_form = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "John Doe".to_string(),
+            message_text: "This is a test message".to_string(),
+        }
+        .validate();
+
+        assert!(good_form.is_ok());
+    }
+
+    #[test]
+    fn too_long_validation_works() {
+        let long_name = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "a".repeat(101),
+            message_text: "a".repeat(10),
+        };
+
+        let result = &long_name.validate_name();
+        assert!(result.is_err());
+
+        let long_message = MessageForm {
+            email: "test@email.com".to_string(),
+            sender_name: "a".repeat(10),
+            message_text: "a".repeat(5001),
+        };
+
+        let result = &long_message.validate_message();
+        assert!(result.is_err());
     }
 }

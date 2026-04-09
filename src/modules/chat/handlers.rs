@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{
     api::startup::JwtPrivateKey,
-    core::error::ChatError,
+    core::error::{AuthError, ChatError},
     modules::auth::{UserId, get_username_by_id},
 };
 
@@ -21,7 +21,10 @@ pub async fn chat_token(
     // fetch username
     let username = get_username_by_id(pool.as_ref(), *user_id)
         .await
-        .map_err(ChatError::UserNotFound)?;
+        .map_err(|e| match e {
+            AuthError::Database(sqlx::Error::RowNotFound) => ChatError::UserNotFound(e),
+            _ => ChatError::Unexpected(e.into()),
+        })?;
 
     // generate via helper
     let token = generate_chat_jwt(&username, *user_id, &jwt_key.0)
