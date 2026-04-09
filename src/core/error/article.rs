@@ -36,20 +36,21 @@ impl AppError for ArticleError {
             Self::Validation(_) => "validation_error",
             Self::BadRequest(_) => "bad_request",
             Self::Database(_) | Self::Unexpected(_) => "internal_error",
-            Self::Idempotency(_) => "idempotency_error",
+            Self::Idempotency(e) => e.code(),
         }
     }
 
-    fn client_message(&self) -> &'static str {
+    fn client_message(&self) -> &str {
         match self {
             Self::NotFound => "The requested post could not be found.",
             Self::DuplicatePost => "A post with this content already exists.",
             Self::SlugConflict => "A post with this slug already exists.",
             // Validation and BadRequest carry caller-supplied messages that are safe to show
             Self::Validation(_) | Self::BadRequest(_) => "",
-            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => {
+            Self::Database(_) | Self::Unexpected(_) => {
                 "An unexpected error occurred. Please try again later."
-            }
+            },
+            Self::Idempotency(e) => e.client_message(),
         }
     }
 
@@ -65,9 +66,10 @@ impl AppError for ArticleError {
             Self::Validation(_) | Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::DuplicatePost | Self::SlugConflict => StatusCode::CONFLICT,
-            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => {
+            Self::Database(_) | Self::Unexpected(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
-            }
+            },
+            Self::Idempotency(e) => e.http_status(),
         }
     }
 }
@@ -103,6 +105,6 @@ mod tests {
         let e = ArticleError::Unexpected(anyhow::anyhow!("unexpected"));
         assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
         let e = ArticleError::Idempotency(IdempotencyError::InFlight);
-        assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(e.status_code(), StatusCode::CONFLICT);
     }
 }

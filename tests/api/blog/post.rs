@@ -44,13 +44,8 @@ async fn blog_posts_with_bad_data_are_rejected() {
 
     let response = app.post_article(&blog_body).await;
     assert_eq!(response.status().as_u16(), 400);
-    assert!(
-        response
-            .text()
-            .await
-            .unwrap()
-            .contains("Json deserialize error")
-    );
+    let error_body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(error_body["code"], "invalid_json_payload");
 
     let blog_body = serde_json::json!({
         "title": "Title",

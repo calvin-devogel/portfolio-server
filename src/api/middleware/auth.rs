@@ -65,7 +65,11 @@ pub async fn reject_non_admin(
         return next.call(req).await;
     }
 
-    if session.get_user_id().is_ok() && session.get_user_id().unwrap().is_some() {
+    let user_id = session
+        .get_user_id()
+        .map_err(|e| AuthError::Unexpected(e.into()))?;
+
+    if user_id.is_some() {
         tracing::warn!(
             "Authenticated non-admin user attempted to access admin route: {}",
             req.path()

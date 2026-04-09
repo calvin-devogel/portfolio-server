@@ -42,11 +42,11 @@ impl AppError for ContactError {
             Self::Duplicate => "duplicate_message",
             Self::NotFound(_) => "not_found",
             Self::Database(_) | Self::Unexpected(_) => "internal_error",
-            Self::Idempotency(_) => "idempotency_error",
+            Self::Idempotency(e) => e.code(),
         }
     }
 
-    fn client_message(&self) -> &'static str {
+    fn client_message(&self) -> &str {
         match self {
             Self::InvalidEmail => "Please provide a valid email address.",
             Self::MessageLength => "Message must be between 10 and 5000 characters.",
@@ -54,9 +54,10 @@ impl AppError for ContactError {
             Self::RateLimited => "You have sent too many messages. Please try again later.",
             Self::Duplicate => "This message has already been sent.",
             Self::NotFound(_) => "The requested message could not be found.",
-            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => {
+            Self::Database(_) | Self::Unexpected(_) => {
                 "An unexpected error occurred. Please try again later."
-            }
+            },
+            Self::Idempotency(e) => e.client_message(),
         }
     }
 
@@ -66,9 +67,10 @@ impl AppError for ContactError {
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::Duplicate => StatusCode::CONFLICT,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => {
+            Self::Database(_) | Self::Unexpected(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
-            }
+            },
+            Self::Idempotency(e) => e.http_status(),
         }
     }
 }

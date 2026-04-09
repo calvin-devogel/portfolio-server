@@ -157,10 +157,15 @@ pub async fn totp_confirm(
     let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id.0)
         .map_err(AuthError::Unexpected)?;
 
-    if !totp.check_current(&request.code).unwrap_or(false) {
+    let is_valid = totp
+        .check_current(&request.code)
+        .context("Failed to check TOTP code")
+        .map_err(AuthError::Unexpected)?;
+
+    if !is_valid {
         return Err(AuthError::Unauthorized(
             "Invalid TOTP verification code".into(),
-        ));
+        ))
     }
 
     sqlx::query!(
@@ -204,7 +209,12 @@ pub async fn verify_totp(
     let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id)
         .map_err(AuthError::Unexpected)?;
 
-    if totp.check_current(&request.code).unwrap_or(false) {
+    let is_valid = totp
+        .check_current(&request.code)
+        .context("Failed to check TOTP code")
+        .map_err(AuthError::Unexpected)?;
+
+    if is_valid {
         session.clear_mfa_pending();
         session.insert_user_id(user_id)?;
         session.insert_user_role(user_role)?;

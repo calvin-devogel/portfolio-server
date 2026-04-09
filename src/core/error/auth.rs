@@ -37,7 +37,7 @@ impl AppError for AuthError {
             Self::BadRequest(_) => "bad_request",
             Self::Forbidden(_) => "forbidden",
             Self::Conflict(_) => "conflict",
-            Self::Idempotency(_) => "idempotency_error",
+            Self::Idempotency(e) => e.code(),
             Self::SessionInsert(_) => "session_error",
             Self::Database(_) | Self::Unexpected(_) => "internal_error",
         }
@@ -53,8 +53,8 @@ impl AppError for AuthError {
             | Self::Conflict(msg) => msg,
             Self::Database(_)
             | Self::Unexpected(_)
-            | Self::Idempotency(_)
             | Self::SessionInsert(_) => "An unexpected error occurred. Please try again later.",
+            Self::Idempotency(e) => e.client_message(),
         }
     }
 
@@ -67,8 +67,8 @@ impl AppError for AuthError {
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::Database(_)
             | Self::Unexpected(_)
-            | Self::Idempotency(_)
             | Self::SessionInsert(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Idempotency(e) => e.http_status(),
         }
     }
 }
