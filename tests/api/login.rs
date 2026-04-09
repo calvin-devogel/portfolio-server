@@ -29,7 +29,7 @@ async fn authorized_users_can_login() {
 }
 
 #[tokio::test]
-async fn unauthorized_users_cannot_access_restricted_routes() {
+async fn anonymous_users_cannot_access_restricted_routes() {
     //arrange
     let app = spawn_app().await;
 

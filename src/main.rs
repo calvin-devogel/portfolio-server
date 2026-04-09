@@ -4,9 +4,8 @@ use std::fmt::{Debug, Display};
 use tokio::task::JoinError;
 
 use portfolio_server::{
-    configuration::get_configuration,
-    startup::Application,
-    telemetry::{get_subscriber, init_subscriber},
+    api::startup::Application,
+    core::{get_configuration, get_subscriber, init_subscriber},
 };
 
 #[tokio::main]
@@ -63,7 +62,7 @@ fn init_tracing() {
 fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>, JoinError>) {
     match outcome {
         Ok(Ok(())) => {
-            tracing::info!("{} has exited", task_name)
+            tracing::info!("{} has exited", task_name);
         }
         Ok(Err(e)) => {
             tracing::error!(
@@ -71,7 +70,7 @@ fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>
                 error.message = %e,
                 "{} failed",
                 task_name
-            )
+            );
         }
         Err(e) => {
             tracing::error!(
@@ -79,7 +78,7 @@ fn report_exit(task_name: &str, outcome: Result<Result<(), impl Debug + Display>
                 error.message = %e,
                 "{}' task failed to complete",
                 task_name
-            )
+            );
         }
     }
 }

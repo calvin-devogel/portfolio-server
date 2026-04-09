@@ -14,7 +14,7 @@ async fn authorized_user_can_query_messages() {
 }
 
 #[tokio::test]
-async fn unauthorized_users_cannot_query_messages() {
+async fn anonymous_users_cannot_query_messages() {
     let app = spawn_app().await;
 
     let response = app.get_messages().await;

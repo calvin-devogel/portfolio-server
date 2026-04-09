@@ -12,7 +12,7 @@ name = "portfolio-server"
 
 [dev-dependencies]
 serde_json = "1.0.61"
-tokio = { version = "1.50", features = ["rt"]}
+tokio = { version = "1.51.1", features = ["rt"]}
 
 [features]
 console = ["console-subscriber"]

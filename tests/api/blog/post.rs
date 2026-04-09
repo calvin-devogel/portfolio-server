@@ -1,7 +1,7 @@
 use crate::helpers::spawn_app;
 
 #[tokio::test]
-async fn unauthorized_users_cannot_post_articles() {
+async fn anonymous_users_cannot_post_articles() {
     let app = spawn_app().await;
 
     let article = serde_json::json!({
@@ -43,8 +43,9 @@ async fn blog_posts_with_bad_data_are_rejected() {
     });
 
     let response = app.post_article(&blog_body).await;
-    dbg!(&response.status().as_u16());
-    assert_eq!(response.status().as_u16(), 413);
+    assert_eq!(response.status().as_u16(), 400);
+    let error_body: serde_json::Value = response.json().await.unwrap();
+    assert_eq!(error_body["code"], "invalid_json_payload");
 
     let blog_body = serde_json::json!({
         "title": "Title",

@@ -1,11 +1,3 @@
-pub mod authentication;
-pub mod configuration;
-pub mod crypto;
-pub mod errors;
-pub mod idempotency;
-pub mod routes;
-pub mod session_state;
-pub mod startup;
-pub mod telemetry;
-pub mod types;
-pub mod utils;
+pub mod api;
+pub mod core;
+pub mod modules;
