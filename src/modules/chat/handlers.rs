@@ -1,13 +1,14 @@
 use actix_web::{HttpResponse, web};
-use anyhow::Context;
 use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
 use secrecy::ExposeSecret;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::{api::startup::JwtPrivateKey, modules::auth::UserId};
-
-use crate::modules::auth::get_username_by_id;
+use crate::{
+    api::startup::JwtPrivateKey,
+    core::error::ChatError,
+    modules::auth::{UserId, get_username_by_id},
+};
 
 use super::models::ChatClaims;
 
@@ -16,15 +17,15 @@ pub async fn chat_token(
     user_id: UserId,
     jwt_key: web::Data<JwtPrivateKey>,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, ChatError> {
     // fetch username
     let username = get_username_by_id(pool.as_ref(), *user_id)
         .await
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+        .map_err(ChatError::UserNotFound)?;
 
     // generate via helper
     let token = generate_chat_jwt(&username, *user_id, &jwt_key.0)
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+        .map_err(|e| ChatError::Unexpected(e.into()))?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({ "token": token })))
 }
@@ -33,10 +34,10 @@ fn generate_chat_jwt(
     username: &str,
     user_id: Uuid,
     jwt_key: &secrecy::SecretString,
-) -> Result<String, anyhow::Error> {
+) -> Result<String, ChatError> {
     let exp = chrono::Utc::now()
         .checked_add_signed(chrono::Duration::seconds(60))
-        .ok_or_else(|| anyhow::anyhow!("time overflow"))?
+        .ok_or_else(|| ChatError::JwtGeneration("time overflow".to_string()))?
         .timestamp();
 
     let claims = ChatClaims {
@@ -50,8 +51,9 @@ fn generate_chat_jwt(
     let pem = jwt_key.expose_secret();
     tracing::info!(pem_len = pem.len(), "Attempting to parse JWT private key");
 
-    let key =
-        EncodingKey::from_ec_pem(pem.as_bytes()).context("EncodingKey::from_ec_pem failed")?;
+    let key = EncodingKey::from_ec_pem(pem.as_bytes())
+        .map_err(|e| ChatError::JwtGeneration(e.to_string()))?;
 
-    encode(&Header::new(Algorithm::ES256), &claims, &key).context("JWT encode failed")
+    encode(&Header::new(Algorithm::ES256), &claims, &key)
+        .map_err(|e| ChatError::JwtGeneration(e.to_string()))
 }

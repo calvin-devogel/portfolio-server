@@ -121,7 +121,7 @@ async fn anonymous_users_cannot_change_user_roles() {
     let response = app
         .patch_user_role(Uuid::new_v4().to_string().as_str(), &role_update)
         .await;
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -134,7 +134,7 @@ async fn anonymous_users_cannot_create_invitations() {
     });
 
     let response = app.post_create_user(&new_user).await;
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -148,7 +148,7 @@ async fn invalid_invitations_are_rejected() {
     });
 
     let accept_response = app.post_accept_invitation(&accept_payload).await;
-    assert_eq!(accept_response.status().as_u16(), 400);
+    assert_eq!(accept_response.status().as_u16(), 401);
 }
 
 #[tokio::test]
@@ -179,7 +179,7 @@ async fn used_invitations_cannot_be_reused() {
     assert_eq!(first_accept.status().as_u16(), 200);
 
     let second_accept = app.post_accept_invitation(&accept_payload).await;
-    assert_eq!(second_accept.status().as_u16(), 400);
+    assert_eq!(second_accept.status().as_u16(), 401);
 }
 
 #[tokio::test]
@@ -237,7 +237,7 @@ async fn anonymous_users_cannot_query_usernames() {
     let app = spawn_app().await;
 
     let response = app.get_user_names(None).await;
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]

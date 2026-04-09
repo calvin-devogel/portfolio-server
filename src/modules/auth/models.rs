@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 use super::session::TypedSession;
 
+use crate::core::error::AuthError;
+
 #[derive(serde::Deserialize, Debug, Clone)]
 pub enum UserActionType {
     CreateUser,
@@ -50,13 +52,12 @@ impl FromRequest for UserId {
         let session = TypedSession(req.get_session());
 
         match session.get_user_id() {
-            Ok(Some(user_id)) => ready(Ok(UserId(user_id))),
+            Ok(Some(user_id)) => ready(Ok(Self(user_id))),
             Ok(None) => ready(Err(actix_web::error::ErrorUnauthorized(
                 "User ID not found in session",
             ))),
             Err(e) => ready(Err(actix_web::error::ErrorInternalServerError(format!(
-                "Failed to retrieve user ID from session: {}",
-                e
+                "Failed to retrieve user ID from session: {e}",
             )))),
         }
     }
@@ -74,9 +75,9 @@ pub enum UserRole {
 impl std::fmt::Display for UserRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UserRole::Admin => write!(f, "admin"),
-            UserRole::User => write!(f, "user"),
-            UserRole::ChatUser => write!(f, "chat_user"),
+            Self::Admin => write!(f, "admin"),
+            Self::User => write!(f, "user"),
+            Self::ChatUser => write!(f, "chat_user"),
         }
     }
 }
@@ -107,9 +108,9 @@ pub struct CreateUser {
 }
 
 impl CreateUser {
-    pub fn validate(&self) -> Result<(), actix_web::Error> {
+    pub fn validate(&self) -> Result<(), AuthError> {
         if !EmailAddress::is_valid(&self.email) {
-            return Err(actix_web::error::ErrorBadRequest("Invalid email address"));
+            return Err(AuthError::BadRequest("Invalid email address".into()));
         }
         Ok(())
     }

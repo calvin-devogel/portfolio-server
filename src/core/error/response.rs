@@ -10,7 +10,9 @@ pub trait AppError: std::error::Error + 'static {
     fn code(&self) -> &'static str;
     fn client_message(&self) -> &str;
     fn http_status(&self) -> StatusCode;
-    fn override_message(&self) -> Option<&str> { None }
+    fn override_message(&self) -> Option<&str> {
+        None
+    }
 }
 
 pub fn build_error_response(e: &impl AppError) -> HttpResponse {
@@ -33,27 +35,14 @@ pub fn build_error_response(e: &impl AppError) -> HttpResponse {
 
     HttpResponse::build(status).json(ApiErrorResponse {
         code: e.code(),
-        message: e.override_message().unwrap_or_else(|| e.client_message()).to_owned(),
+        message: e
+            .override_message()
+            .unwrap_or_else(|| e.client_message())
+            .to_owned(),
     })
 }
 
-use actix_web::{http::header::LOCATION};
-
-// http 400 aka client-side error
-pub fn e400<T>(e: T) -> actix_web::Error
-where
-    T: std::fmt::Debug + std::fmt::Display + 'static,
-{
-    actix_web::error::ErrorBadRequest(e)
-}
-
-// http 500 aka server-side error
-pub fn e500<T>(e: T) -> actix_web::Error
-where
-    T: std::fmt::Debug + std::fmt::Display + 'static,
-{
-    actix_web::error::ErrorInternalServerError(e)
-}
+use actix_web::http::header::LOCATION;
 
 // redirect (don't think I need this on the server side, probably have to send a signal?)
 #[must_use]
@@ -63,13 +52,7 @@ pub fn see_other(location: &str) -> HttpResponse {
         .finish()
 }
 
-#[must_use]
-pub fn unauthorized() -> HttpResponse {
-    HttpResponse::Unauthorized().finish()
-}
-
 // format the error chain
-#[allow(clippy::missing_errors_doc)]
 pub fn error_chain_fmt(
     e: &impl std::error::Error,
     f: &mut std::fmt::Formatter<'_>,
@@ -90,34 +73,10 @@ mod test {
     use std::fmt;
 
     #[test]
-    fn e400_returns_bad_request() {
-        let err = e400("bad input");
-        assert_eq!(
-            err.as_response_error().status_code(),
-            StatusCode::BAD_REQUEST
-        );
-    }
-
-    #[test]
-    fn e500_returns_internal_server_error() {
-        let err = e500("something went wrong");
-        assert_eq!(
-            err.as_response_error().status_code(),
-            StatusCode::INTERNAL_SERVER_ERROR
-        );
-    }
-
-    #[test]
     fn see_other_returns_303_with_location_header() {
         let response = see_other("/new-location");
         assert_eq!(response.status(), StatusCode::SEE_OTHER);
         assert_eq!(response.headers().get(LOCATION).unwrap(), "/new-location");
-    }
-
-    #[test]
-    fn unauthorized_returns_401() {
-        let response = unauthorized();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     // minimal single-level error

@@ -37,7 +37,7 @@ async fn unauthorized_users_cannot_access_restricted_routes() {
     let response = app.get_messages().await;
 
     // assert
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]

@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     api::idempotency::execute_idempotent,
-    core::{PaginatedResponse, PaginationMeta, PaginationQuery, error::Blog},
+    core::{PaginatedResponse, PaginationMeta, PaginationQuery, error::ArticleError},
     modules::auth::{TypedSession, UserId},
 };
 
@@ -23,12 +23,13 @@ use super::db::{
     skip_all,
     fields(user_id = %*user_id, article_id = %article.post_id)
 )]
+#[allow(clippy::future_not_send)]
 pub async fn delete_article(
     article: web::Json<ArticleDeleteRequest>,
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let article_to_delete = article.0;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
@@ -40,21 +41,22 @@ pub async fn delete_article(
 async fn process_delete_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleDeleteRequest,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let rows = delete_article_query(transaction.as_mut(), article.post_id)
         .await
-        .map_err(|e| Blog::Unexpected(e.into()))?;
+        .map_err(|e| ArticleError::Unexpected(e.into()))?;
 
     handle_rows_affected(rows, article.post_id, StatusCode::OK, "deleted")
 }
 
 #[tracing::instrument(name = "Edit blog post", skip_all)]
+#[allow(clippy::future_not_send)]
 pub async fn edit_article(
     article_edit_request: web::Json<ArticleEditRequest>,
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let article_to_edit = article_edit_request.into_inner();
 
     article_to_edit.validate()?;
@@ -68,17 +70,19 @@ pub async fn edit_article(
 async fn process_edit_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleEditRequest,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let sections_json = article
         .sections_as_json()
-        .map_err(|e| Blog::Unexpected(e.into()))?;
+        .map_err(|e| ArticleError::Unexpected(e.into()))?;
 
     if article.title.is_none()
         && article.excerpt.is_none()
         && article.author.is_none()
         && sections_json.is_none()
     {
-        return Err(Blog::BadRequest("No fields provided to update".into()));
+        return Err(ArticleError::BadRequest(
+            "No fields provided to update".into(),
+        ));
     }
 
     let rows = update_article_query(
@@ -90,18 +94,19 @@ async fn process_edit_article(
         sections_json,
     )
     .await
-    .map_err(|e| Blog::Unexpected(e.into()))?;
+    .map_err(|e| ArticleError::Unexpected(e.into()))?;
 
     handle_rows_affected(rows, article.post_id, StatusCode::ACCEPTED, "updated")
 }
 
 #[tracing::instrument(name = "Publish blog post", skip_all)]
+#[allow(clippy::future_not_send)]
 pub async fn publish_article(
     article: web::Json<ArticlePublishRequest>,
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let article_to_publish = article.0;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
@@ -113,10 +118,10 @@ pub async fn publish_article(
 async fn process_publish_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticlePublishRequest,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let rows = publish_article_query(transaction.as_mut(), article.post_id, article.published)
         .await
-        .map_err(|e| Blog::Unexpected(e.into()))?;
+        .map_err(|e| ArticleError::Unexpected(e.into()))?;
 
     handle_rows_affected(rows, article.post_id, StatusCode::ACCEPTED, "published")
 }
@@ -128,12 +133,13 @@ async fn process_publish_article(
         post_id = tracing::field::Empty
     )
 )]
+#[allow(clippy::future_not_send)]
 pub async fn insert_article(
     blog_post: web::Json<ArticleForm>,
     user_id: UserId,
     pool: web::Data<PgPool>,
     request: HttpRequest,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let blog_to_post = blog_post.into_inner();
 
     blog_to_post.validate()?;
@@ -147,12 +153,12 @@ pub async fn insert_article(
 async fn process_new_article(
     transaction: &mut Transaction<'static, Postgres>,
     article: ArticleForm,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     let post_id = Uuid::new_v4();
     let slug = get_article_slug(&article.title);
-    let sections_json = article.sections_as_json().map_err(|e| {
-        Blog::Unexpected(e.into())
-    })?;
+    let sections_json = article
+        .sections_as_json()
+        .map_err(|e| ArticleError::Unexpected(e.into()))?;
 
     tracing::Span::current().record("post_id", tracing::field::display(&post_id));
 
@@ -168,7 +174,7 @@ async fn process_new_article(
     .await;
 
     match insert_result {
-        Ok(_) => {
+        Ok(()) => {
             tracing::info!("Post saved successfully with: {}", post_id);
             Ok(HttpResponse::Accepted().json(ArticleResponse::new(
                 "Post received successfully",
@@ -177,11 +183,11 @@ async fn process_new_article(
         }
         Err(sqlx::Error::Database(db_err)) if db_err.code().as_deref() == Some("23505") => {
             tracing::warn!("Duplicate post detected");
-            Err(Blog::DuplicatePost)
+            Err(ArticleError::DuplicatePost)
         }
         Err(e) => {
             tracing::error!("Failed to save post: {e:?}");
-            Err(Blog::Unexpected(e.into()))
+            Err(ArticleError::Unexpected(e.into()))
         }
     }
 }
@@ -200,7 +206,7 @@ fn handle_rows_affected(
     post_id: Uuid,
     success_status: StatusCode,
     context: &str,
-) -> Result<HttpResponse, Blog> {
+) -> Result<HttpResponse, ArticleError> {
     match rows {
         1 => {
             tracing::info!("Post {} {} successfully", post_id, context);
@@ -208,7 +214,7 @@ fn handle_rows_affected(
         }
         0 => {
             tracing::warn!("Blog post not found: {}", post_id);
-            Err(Blog::NotFound)
+            Err(ArticleError::NotFound)
         }
         rows => {
             tracing::error!(
@@ -216,7 +222,9 @@ fn handle_rows_affected(
                 rows,
                 post_id
             );
-            Err(Blog::Unexpected(anyhow::anyhow!("Unexpected rows affected: {rows}")))
+            Err(ArticleError::Unexpected(anyhow::anyhow!(
+                "Unexpected rows affected: {rows}"
+            )))
         }
     }
 }
@@ -250,6 +258,7 @@ fn parse_header<T: std::str::FromStr>(req: &HttpRequest, key: &str) -> Option<T>
     skip(pool, session),
     fields(page, page_size, on_published, slug)
 )]
+#[allow(clippy::future_not_send)]
 pub async fn get_articles(
     request: HttpRequest,
     pool: web::Data<PgPool>,
@@ -262,7 +271,7 @@ pub async fn get_articles(
 
     let is_authenticated = session
         .get_user_id()
-        .map_err(|e| Blog::Unexpected(e.into()))?
+        .map_err(|e| ArticleError::Unexpected(e.into()))?
         .is_some();
 
     let on_published = if is_authenticated {
@@ -283,7 +292,7 @@ pub async fn get_articles(
         .await
         .map_err(|e| {
             tracing::error!("Failed to get blog post count: {e:?}");
-            Blog::Unexpected(e.into())
+            ArticleError::Unexpected(e.into())
         })?;
 
     let articles = fetch_articles(
@@ -296,7 +305,7 @@ pub async fn get_articles(
     .await
     .map_err(|e| {
         tracing::error!("Failed to fetch or deserialize blog posts: {e:?}");
-        Blog::Unexpected(e.into())
+        ArticleError::Unexpected(e.into())
     })?;
 
     let response = PaginatedResponse {

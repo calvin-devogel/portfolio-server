@@ -1,4 +1,4 @@
-use crate::core::error::Idempotency;
+use crate::core::error::IdempotencyError;
 
 // let's remind ourselves of what is happening here
 // this is the idempotency key, associated with any action we're trying
@@ -14,14 +14,16 @@ impl IdempotencyKey {
 // - the key must be non-empty
 // - the key must be no more than 50 characters in length
 impl TryFrom<String> for IdempotencyKey {
-    type Error = Idempotency;
+    type Error = IdempotencyError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         if s.is_empty() {
-            return Err(Idempotency::InvalidKey("The idempotency key cannot be empty".to_string()));
+            return Err(IdempotencyError::InvalidKey(
+                "The idempotency key cannot be empty".to_string(),
+            ));
         }
         if s.len() >= Self::MAX_LENGTH {
-            return Err(Idempotency::InvalidKey(format!(
+            return Err(IdempotencyError::InvalidKey(format!(
                 "The idempotency key must be shorter than {} characters",
                 Self::MAX_LENGTH
             )));

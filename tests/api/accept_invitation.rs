@@ -87,7 +87,7 @@ async fn invitation_token_cannot_be_reused() {
         }))
         .await;
 
-    assert_eq!(second_response.status().as_u16(), 400);
+    assert_eq!(second_response.status().as_u16(), 401);
 }
 
 #[tokio::test]
@@ -102,7 +102,7 @@ async fn invalid_token_is_rejected() {
         }))
         .await;
 
-    assert_eq!(response.status().as_u16(), 400);
+    assert_eq!(response.status().as_u16(), 401);
 }
 
 #[tokio::test]
@@ -138,5 +138,5 @@ async fn expired_token_is_rejected() {
         }))
         .await;
 
-    assert_eq!(response.status().as_u16(), 400);
+    assert_eq!(response.status().as_u16(), 401);
 }

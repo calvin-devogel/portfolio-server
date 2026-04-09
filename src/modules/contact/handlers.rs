@@ -5,8 +5,8 @@ use uuid::Uuid;
 
 use crate::{
     api::idempotency::execute_idempotent,
+    core::error::ContactError,
     core::{MessageRateLimitSettings, PaginationMeta, PaginationQuery},
-    core::error::Contact,
     modules::auth::UserId,
 };
 
@@ -23,20 +23,20 @@ use super::models::{
 pub async fn get_messages(
     query: web::Query<PaginationQuery>,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, Contact> {
+) -> Result<HttpResponse, ContactError> {
     let q = query.into_inner();
     let page_size = q.page_size();
     let offset = q.offset();
 
     let total_count = count_messages(pool.as_ref()).await.map_err(|e| {
-        Contact::Unexpected(anyhow::anyhow!("Failed to get message count: {e:?}"))
+        ContactError::Unexpected(anyhow::anyhow!("Failed to get message count: {e:?}"))
     })?;
 
     let messages = fetch_messages(pool.as_ref(), page_size, offset)
         .await
         .map_err(|e| {
             tracing::error!("Failed to fetch messages: {e:?}");
-            Contact::Unexpected(anyhow::anyhow!("Failed to fetch messages: {e:?}"))
+            ContactError::Unexpected(anyhow::anyhow!("Failed to fetch messages: {e:?}"))
         })?;
 
     let meta = PaginationMeta::from_total(total_count, &q);
@@ -57,12 +57,13 @@ pub async fn get_messages(
     skip_all,
     fields(user_id = %*user_id, message_id = %message.message_id)
 )]
+#[allow(clippy::future_not_send)]
 pub async fn patch_message(
     message: web::Json<MessagePatchRequest>,
     user_id: UserId,
     request: HttpRequest,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, Contact> {
+) -> Result<HttpResponse, ContactError> {
     let message_to_patch = message.0;
 
     execute_idempotent(&request, &pool, Some(*user_id), move |tx| {
@@ -75,16 +76,14 @@ pub async fn patch_message(
 async fn process_patch_message(
     transaction: &mut Transaction<'static, Postgres>,
     message: MessagePatchRequest,
-) -> Result<HttpResponse, Contact> {
+) -> Result<HttpResponse, ContactError> {
     let message_id = message.message_id;
 
     let rows = update_message_read_status(transaction.as_mut(), message_id, message.read)
         .await
         .map_err(|e| {
             tracing::warn!("Message update query failed");
-            Contact::Unexpected(anyhow::anyhow!(
-                "Message update query failed: {e:?}"
-            ))
+            ContactError::Unexpected(anyhow::anyhow!("Message update query failed: {e:?}"))
         })?;
 
     match rows {
@@ -94,7 +93,7 @@ async fn process_patch_message(
         }
         0 => {
             tracing::warn!("Message not found: {}", message_id);
-            Err(Contact::NotFound(message_id))
+            Err(ContactError::NotFound(message_id))
         }
         rows => {
             tracing::error!(
@@ -102,10 +101,9 @@ async fn process_patch_message(
                 rows,
                 message_id
             );
-            Err(Contact::Unexpected(anyhow::anyhow!(
+            Err(ContactError::Unexpected(anyhow::anyhow!(
                 "Unexpected rows affected: {rows}"
-            ))
-            .into())
+            )))
         }
     }
 }
@@ -118,12 +116,13 @@ async fn process_patch_message(
         message_id = tracing::field::Empty
     )
 )]
+#[allow(clippy::future_not_send)]
 pub async fn post_message(
     message: web::Form<MessageForm>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
     message_config: web::Data<MessageRateLimitSettings>,
-) -> Result<HttpResponse, Contact> {
+) -> Result<HttpResponse, ContactError> {
     let message_to_post = message.0;
     let config_for_op = message_config.clone();
 
@@ -141,7 +140,7 @@ async fn process_new_message(
     transaction: &mut Transaction<'static, Postgres>,
     config: &MessageRateLimitSettings,
     message: MessageForm,
-) -> Result<HttpResponse, Contact> {
+) -> Result<HttpResponse, ContactError> {
     let validated_input = message.validate()?;
 
     let max_msg = i32::try_from(config.max_messages).expect("Failed to cast config.max_messages");
@@ -155,12 +154,10 @@ async fn process_new_message(
         win_min,
     )
     .await
-    .map_err(|e| {
-        Contact::Unexpected(anyhow::anyhow!("Unexpected error: {e:?}"))
-    })?;
+    .map_err(|e| ContactError::Unexpected(anyhow::anyhow!("Unexpected error: {e:?}")))?;
 
     if !rate_ok {
-        return Err(Contact::RateLimited.into());
+        return Err(ContactError::RateLimited);
     }
 
     let message_id = MessageId(Uuid::new_v4());
@@ -176,7 +173,7 @@ async fn process_new_message(
     .await;
 
     match result {
-        Ok(_) => {
+        Ok(()) => {
             tracing::info!("Message saved successfully with: {}", message_id);
             Ok(HttpResponse::Accepted().json(MessageResponse::new(
                 "Message received successfully",
@@ -186,10 +183,10 @@ async fn process_new_message(
         Err(e) => {
             if e.to_string().contains("Duplicate message detected") {
                 tracing::warn!("Duplicate message detected");
-                Err(Contact::Duplicate.into())
+                Err(ContactError::Duplicate)
             } else {
                 tracing::error!("Failed to save message: {e:?}");
-                Err(Contact::Unexpected(e.into()).into())
+                Err(ContactError::Unexpected(e.into()))
             }
         }
     }

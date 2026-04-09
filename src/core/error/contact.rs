@@ -1,12 +1,12 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use uuid::Uuid;
 
-use crate::core::error::Idempotency;
+use crate::core::error::IdempotencyError;
 
 use super::response::{AppError, build_error_response};
 
 #[derive(thiserror::Error, Debug)]
-pub enum Contact {
+pub enum ContactError {
     // validation errors, safe to surface
     #[error("Invalid email address")]
     InvalidEmail,
@@ -29,10 +29,10 @@ pub enum Contact {
     #[error(transparent)]
     Unexpected(#[from] anyhow::Error),
     #[error(transparent)]
-    Idempotency(#[from] Idempotency),
+    Idempotency(#[from] IdempotencyError),
 }
 
-impl AppError for Contact {
+impl AppError for ContactError {
     fn code(&self) -> &'static str {
         match self {
             Self::InvalidEmail => "invalid_email",
@@ -66,12 +66,14 @@ impl AppError for Contact {
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::Duplicate => StatusCode::CONFLICT,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
-            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         }
     }
 }
 
-impl ResponseError for Contact {
+impl ResponseError for ContactError {
     fn status_code(&self) -> StatusCode {
         self.http_status()
     }

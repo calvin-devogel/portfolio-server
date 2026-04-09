@@ -134,9 +134,6 @@ pub struct TtlSettings {
     pub idle_timeout_minutes: u32,
 }
 
-#[allow(clippy::missing_errors_doc)]
-/// # Panics
-/// panic gracefully please
 pub fn get_configuration() -> Result<Settings, config::ConfigError> {
     let base_path = std::env::current_dir().expect("Failed to determine the current directory");
     let configuration_directory = base_path.join("configuration");

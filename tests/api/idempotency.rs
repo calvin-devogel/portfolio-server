@@ -5,7 +5,7 @@ use portfolio_server::{
         IdempotencyKey, NextAction, execute_idempotent_with, get_saved_response, save_response,
         try_processing,
     },
-    core::error::Idempotency as IdempotencyError,
+    core::error::IdempotencyError,
 };
 use uuid::Uuid;
 
@@ -290,8 +290,5 @@ async fn process_fn_error_is_handled() {
     .await;
 
     assert!(result.is_err());
-    assert!(matches!(
-        result.unwrap_err(),
-        IdempotencyError::InFlight
-    ));
+    assert!(matches!(result.unwrap_err(), IdempotencyError::InFlight));
 }

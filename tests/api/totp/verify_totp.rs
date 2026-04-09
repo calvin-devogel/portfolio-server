@@ -30,7 +30,7 @@ async fn mfa_pending_session_cannot_access_admin_routes() {
     app.post_login(&app.test_user).await;
 
     let response = app.get_messages().await;
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]

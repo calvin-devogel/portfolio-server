@@ -5,7 +5,7 @@ use std::future::Future;
 use std::pin::Pin;
 use uuid::Uuid;
 
-use crate::core::error::Idempotency;
+use crate::core::error::IdempotencyError;
 
 // header pair type for sqlx
 #[derive(Debug, sqlx::Type)]
@@ -25,21 +25,22 @@ pub enum NextAction {
     ReturnSavedResponse(HttpResponse),
 }
 
+#[allow(clippy::too_long_first_doc_paragraph)]
 // tries to insert a new row with key + user_id (this will need to change)
 // if the row is able to be inserted -> StartProcessing a transaction
 // if the row already exists -> fetch saved response and return it
-/// as for why (NextAction::StartProcessing, None) is an unreachable state:
-///     - if n_inserted_rows > 0, return (NextAction::StartProcessing, Some(transaction))
-///     - if n_inserted_rows == 0, return *either*
-///         - (NextAction::ReturnSavedResponse(response), None) or
-///         - (Idempotency::InFlight)
-/// so no path allows the match statement to find (NextAction, None)
+/// as for why (`NextAction::StartProcessing`, None) is an unreachable state:
+///     - if `n_inserted_rows` > 0, return (`NextAction::StartProcessing`, Some(transaction))
+///     - if `n_inserted_rows` == 0, return *either*
+///         - (`NextAction::ReturnSavedResponse(response)`, None) or
+///         - (`Idempotency::InFlight`)
+/// so no path allows the match statement to find (`NextAction`, None)
 pub async fn try_processing(
     pool: &PgPool,
     idempotency_key: &IdempotencyKey,
     user_id: Option<Uuid>,
     operation: &str,
-) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), Idempotency> {
+) -> Result<(NextAction, Option<Transaction<'static, Postgres>>), IdempotencyError> {
     let mut transaction = pool.begin().await?;
     let query = sqlx::query!(
         r#"
@@ -63,7 +64,7 @@ pub async fn try_processing(
         let saved_response = get_saved_response(pool, idempotency_key, user_id, operation).await?;
 
         saved_response.map_or_else(
-            || Err(Idempotency::InFlight),
+            || Err(IdempotencyError::InFlight),
             |response| Ok((NextAction::ReturnSavedResponse(response), None)),
         )
     }
@@ -81,7 +82,7 @@ pub async fn save_response(
     user_id: Option<Uuid>,
     operation: &str,
     http_response: HttpResponse,
-) -> Result<HttpResponse, Idempotency> {
+) -> Result<HttpResponse, IdempotencyError> {
     let (response_head, body) = http_response.into_parts();
     // MessageBody::Error is not `Send` + `Sync`
     // -> it does not play nicely with `anyhow`
@@ -176,19 +177,20 @@ pub async fn get_saved_response(
 // if duplicate -> `get_saved_response()` returns the cached result immediately
 
 // there are a few places where an idempotency key is required, use this wherever it is
-pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, Idempotency> {
+pub fn get_idempotency_key(request: &HttpRequest) -> Result<IdempotencyKey, IdempotencyError> {
     let idempotency_key = request
         .headers()
         .get("Idempotency-Key")
         .and_then(|header| header.to_str().ok())
-        .ok_or(Idempotency::MissingKey)?
+        .ok_or(IdempotencyError::MissingKey)?
         .to_string();
-        
-    IdempotencyKey::try_from(idempotency_key).map_err(Into::into)
+
+    IdempotencyKey::try_from(idempotency_key)
 }
 
 // wrapper for execute_idempotent_with that calls the default process_fn
 // (try_processing) that all non-test callers will use.
+#[allow(clippy::future_not_send)]
 pub async fn execute_idempotent<F, E>(
     request: &HttpRequest,
     pool: &PgPool,
@@ -197,9 +199,11 @@ pub async fn execute_idempotent<F, E>(
 ) -> Result<HttpResponse, E>
 where
     F: for<'a> FnOnce(
-        &'a mut Transaction<'static, Postgres>,
-    ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
-    E: From<Idempotency> + std::fmt::Debug,
+            &'a mut Transaction<'static, Postgres>,
+        )
+            -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + Send + 'a>>
+        + Send,
+    E: From<IdempotencyError> + std::fmt::Debug,
 {
     execute_idempotent_with(request, pool, user_id, action, |pool, key, user_id, op| {
         Box::pin(async move {
@@ -278,22 +282,24 @@ pub async fn execute_idempotent_with<F, P, E>(
 where
     F: for<'a> FnOnce(
         &'a mut Transaction<'static, Postgres>,
-    ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + 'a>>,
+    ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, E>> + Send + 'a>>,
     P: for<'p> FnOnce(
-        &'p PgPool,
-        &'p IdempotencyKey,
-        Option<Uuid>,
-        &'p str, // operation identifier
-    ) -> Pin<
-        Box<
-            dyn Future<Output = Result<(NextAction, Option<Transaction<'static, Postgres>>), E>>
-                + 'p,
-        >,
-    >,
-    E: From<Idempotency> + std::fmt::Debug,
+            &'p PgPool,
+            &'p IdempotencyKey,
+            Option<Uuid>,
+            &'p str, // operation identifier
+        ) -> Pin<
+            Box<
+                dyn Future<Output = Result<(NextAction, Option<Transaction<'static, Postgres>>), E>>
+                    + Send
+                    + 'p,
+            >,
+        > + Send,
+    E: From<IdempotencyError> + std::fmt::Debug,
 {
     let key = get_idempotency_key(request).map_err(E::from)?;
     let operation = format!("{}:{}", request.method().as_str(), request.path());
+
     let (next, tx_opt) = process_fn(pool, &key, user_id, &operation)
         // propogate error directly from process_fn so we actually know what happened
         .await?;
@@ -310,7 +316,7 @@ where
             Ok(response)
         }
 
-        (NextAction::StartProcessing, None) => Err(E::from(Idempotency::Unexpected(
+        (NextAction::StartProcessing, None) => Err(E::from(IdempotencyError::Unexpected(
             anyhow::anyhow!("Invariant violation: StartProcessing with missing transaction"),
         ))),
     }

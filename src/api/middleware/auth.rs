@@ -3,13 +3,12 @@ use actix_web::{
     body::MessageBody,
     cookie::{Cookie, SameSite},
     dev::{ServiceRequest, ServiceResponse},
-    error::InternalError,
     http::Method,
     middleware::Next,
 };
 use uuid::Uuid;
 
-use crate::core::error::{e500, unauthorized};
+use crate::core::error::AuthError;
 use crate::modules::auth::{TypedSession, UserRole};
 
 const XSRF_COOKIE_NAME: &str = "XSRF-TOKEN";
@@ -30,19 +29,23 @@ pub async fn reject_unauthenticated(
     // component.
     let session = session.expect("session middleware not configured");
 
-    // SAFETY: A panic here is correct behavior. insert_user_id only accepts UUID,
-    // so the stored value will always be deserializable as Uuid, and calling unwrap()
-    // on get_user_id is acceptable. A panic here is in effect, equivalent to the
-    // session middleware not being configured.
-    if session.get_user_id().map_err(e500)?.is_some() {
+    let is_authenticated = session
+        .get_user_id()
+        .map_err(|e| AuthError::Unexpected(e.into()))?
+        .is_some();
+
+    if is_authenticated {
         next.call(req).await
     } else {
-        let response = unauthorized();
-        let e = anyhow::anyhow!("The user has not logged in");
-        Err(InternalError::from_response(e, response).into())
+        tracing::warn!(
+            "Unauthenticated user attempted to access protected route: {}",
+            req.path()
+        );
+        Err(AuthError::Unauthorized("The user has not logged in".to_string()).into())
     }
 }
 
+#[allow(clippy::future_not_send)]
 pub async fn reject_non_admin(
     mut req: ServiceRequest,
     next: Next<impl MessageBody>,
@@ -54,15 +57,22 @@ pub async fn reject_non_admin(
 
     let session = session.expect("session middleware not configured");
 
-    if let Some(user_role) = session.get_user_role().map_err(e500)?
+    if let Some(user_role) = session
+        .get_user_role()
+        .map_err(|e| AuthError::Unexpected(e.into()))?
         && user_role == UserRole::Admin
     {
         return next.call(req).await;
     }
 
-    let response = unauthorized();
-    let e = anyhow::anyhow!("The user does not have admin privileges");
-    Err(InternalError::from_response(e, response).into())
+    tracing::warn!(
+        "Non-admin user attempted to access admin route: {}",
+        req.path()
+    );
+    Err(AuthError::Forbidden(
+        "The user does not have permission to access this resource".to_string(),
+    )
+    .into())
 }
 
 #[allow(clippy::future_not_send)]
@@ -85,7 +95,13 @@ pub async fn csrf_protection(
 
         match (cookie_val, header_val) {
             (Some(c), Some(h)) if !c.is_empty() && c == h => {}
-            _ => return Err(actix_web::error::ErrorForbidden("Invalid CSRF token")),
+            _ => {
+                tracing::warn!(
+                    "CSRF token validation failed on unsafe request to {}",
+                    req.path()
+                );
+                return Err(AuthError::Forbidden("Invalid CSRF token".to_string()).into());
+            }
         }
     }
 

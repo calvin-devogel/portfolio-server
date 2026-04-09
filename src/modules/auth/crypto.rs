@@ -14,9 +14,9 @@ use sqlx::PgPool;
 use totp_rs::{Algorithm as TotpAlgorithm, Secret, TOTP};
 use uuid::Uuid;
 
-use crate::core::error::{Auth};
 use super::db::get_stored_credentials;
 use super::models::{Credentials, UserDetails, UserRole};
+use crate::core::error::AuthError;
 
 // wrapper for credential validation that uses the default hash function
 // exposed publicly as `validate_credentials` but allows for injecting
@@ -24,7 +24,7 @@ use super::models::{Credentials, UserDetails, UserRole};
 pub async fn validate_credentials(
     credentials: Credentials,
     pool: &PgPool,
-) -> Result<UserDetails, Auth> {
+) -> Result<UserDetails, AuthError> {
     validate_credentials_with_verifier(credentials, pool, verify_password_hash).await
 }
 
@@ -34,9 +34,9 @@ pub async fn validate_credentials_with_verifier<F>(
     credentials: Credentials,
     pool: &PgPool,
     verify_fn: F,
-) -> Result<UserDetails, Auth>
+) -> Result<UserDetails, AuthError>
 where
-    F: FnOnce(&SecretString, &SecretString) -> Result<(), Auth> + Send + 'static, // Trait Bounds!
+    F: FnOnce(&SecretString, &SecretString) -> Result<(), AuthError> + Send + 'static, // Trait Bounds!
 {
     let mut user_id = None;
     let mut totp_enabled = false;
@@ -75,7 +75,7 @@ where
     // we never authenticate a non-existent user.
     user_id
         .ok_or_else(|| anyhow::anyhow!("Unknown username"))
-        .map_err(Auth::InvalidCredentials)
+        .map_err(AuthError::InvalidCredentials)
         .map(|id| (id, totp_enabled, must_change_password, user_role))
 }
 
@@ -86,7 +86,7 @@ where
 fn verify_password_hash(
     expected_password_hash: &SecretString,
     password_candidate: &SecretString,
-) -> Result<(), Auth> {
+) -> Result<(), AuthError> {
     let expected_password_hash = PasswordHash::new(expected_password_hash.expose_secret())
         .context("Failed to parse hash in PHC string format.")?;
 
@@ -96,7 +96,7 @@ fn verify_password_hash(
             &expected_password_hash,
         )
         .context("Invalid password.")
-        .map_err(Auth::InvalidCredentials)
+        .map_err(AuthError::InvalidCredentials)
 }
 
 pub fn compute_password_hash(password: &SecretString) -> Result<SecretString, anyhow::Error> {
@@ -193,7 +193,7 @@ pub fn build_totp(secret_b32: String, user_id: Uuid) -> Result<TOTP, anyhow::Err
         None,
         user_id.to_string(),
     )
-    .map_err(|e| anyhow::anyhow!("Failed to create TOTP instance: {}", e))
+    .map_err(|e| anyhow::anyhow!("Failed to create TOTP instance: {e}"))
 }
 
 pub fn totp_from_encrypted(
@@ -202,6 +202,6 @@ pub fn totp_from_encrypted(
     user_id: Uuid,
 ) -> Result<TOTP, anyhow::Error> {
     let totp_secret = String::from_utf8(decrypt(key, encrypted)?)
-        .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Decryption failed: {e}"))?;
     build_totp(totp_secret, user_id)
 }

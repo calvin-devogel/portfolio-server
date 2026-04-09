@@ -9,7 +9,7 @@ async fn totp_setup_requires_authentication() {
 
     let response = app.get_totp_setup().await;
 
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -55,7 +55,7 @@ async fn totp_confirm_requires_authentication() {
 
     let response = app.post_totp_confirm("123456").await;
 
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -124,7 +124,7 @@ async fn totp_disable_requires_authentication() {
 
     let response = app.post_totp_disable(&app.test_user.password.clone()).await;
 
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]

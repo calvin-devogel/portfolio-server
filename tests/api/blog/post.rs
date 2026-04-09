@@ -12,7 +12,7 @@ async fn unauthorized_users_cannot_post_articles() {
     });
 
     let response = app.post_article(&article).await;
-    assert_eq!(response.status().as_u16(), 401);
+    assert_eq!(response.status().as_u16(), 403);
 }
 
 #[tokio::test]
@@ -43,8 +43,14 @@ async fn blog_posts_with_bad_data_are_rejected() {
     });
 
     let response = app.post_article(&blog_body).await;
-    dbg!(&response.status().as_u16());
-    assert_eq!(response.status().as_u16(), 413);
+    assert_eq!(response.status().as_u16(), 400);
+    assert!(
+        response
+            .text()
+            .await
+            .unwrap()
+            .contains("Json deserialize error")
+    );
 
     let blog_body = serde_json::json!({
         "title": "Title",

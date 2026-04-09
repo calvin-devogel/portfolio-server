@@ -3,7 +3,7 @@ use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 use super::response::{AppError, build_error_response};
 
 #[derive(thiserror::Error, Debug)]
-pub enum Idempotency {
+pub enum IdempotencyError {
     #[error("Missing idempotency key")]
     MissingKey,
     #[error("Invalid idempotency key format")]
@@ -17,7 +17,7 @@ pub enum Idempotency {
     Unexpected(#[from] anyhow::Error),
 }
 
-impl AppError for Idempotency {
+impl AppError for IdempotencyError {
     fn code(&self) -> &'static str {
         match self {
             Self::MissingKey => "missing_idempotency_key",
@@ -31,7 +31,9 @@ impl AppError for Idempotency {
         match self {
             Self::MissingKey => "An idempotency key is required for this request.",
             Self::InvalidKey(msg) => msg,
-            Self::InFlight => "A request with this key is already being processed. Please wait and retry.",
+            Self::InFlight => {
+                "A request with this key is already being processed. Please wait and retry."
+            }
             Self::Database(_) | Self::Unexpected(_) => {
                 "An unexpected error occurred. Please try again later."
             }
@@ -47,7 +49,7 @@ impl AppError for Idempotency {
     }
 }
 
-impl ResponseError for Idempotency {
+impl ResponseError for IdempotencyError {
     fn status_code(&self) -> StatusCode {
         self.http_status()
     }
@@ -63,15 +65,15 @@ mod tests {
 
     #[test]
     fn test_idempotency_error_codes() {
-        let err = Idempotency::MissingKey;
+        let err = IdempotencyError::MissingKey;
         assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
-        let err = Idempotency::InvalidKey("Invalid key".to_string());
+        let err = IdempotencyError::InvalidKey("Invalid key".to_string());
         assert_eq!(err.status_code(), StatusCode::BAD_REQUEST);
-        let err = Idempotency::InFlight;
+        let err = IdempotencyError::InFlight;
         assert_eq!(err.status_code(), StatusCode::CONFLICT);
-        let err = Idempotency::Database(sqlx::Error::RowNotFound);
+        let err = IdempotencyError::Database(sqlx::Error::RowNotFound);
         assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-        let err = Idempotency::Unexpected(anyhow::anyhow!("Unexpected"));
+        let err = IdempotencyError::Unexpected(anyhow::anyhow!("Unexpected"));
         assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

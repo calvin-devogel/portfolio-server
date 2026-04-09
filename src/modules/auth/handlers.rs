@@ -1,4 +1,4 @@
-use actix_web::{HttpRequest, HttpResponse, dev::ConnectionInfo, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use anyhow::Context;
 use rand::{RngExt, distr::Alphanumeric};
 use secrecy::{ExposeSecret, SecretString};
@@ -11,19 +11,20 @@ use super::crypto::{
     validate_credentials,
 };
 use super::db::{
-    change_password, force_password_reset, get_totp_secret_role_and_flags, get_username_by_id,
+    change_password, consume_invitation, force_password_reset, get_invitation_from_token,
+    get_totp_secret_role_and_flags, get_username_by_id, insert_user, insert_user_invitation,
     is_totp_enabled, query_users, update_user_role,
 };
 use super::models::{
     AcceptInvitationParams, ChangePasswordBody, CreateUser, Credentials, DisableTotpRequest,
-    RoleUpdate, TotpEncryptionKey, TotpQuery, TotpRequest, UserId,
+    RoleUpdate, TotpEncryptionKey, TotpQuery, TotpRequest, UserId, UserRole,
 };
 use super::session::TypedSession;
 
 use crate::api::idempotency::execute_idempotent;
 use crate::api::startup::ApplicationBaseUrl;
 
-use crate::core::error::{e500, Auth};
+use crate::core::error::AuthError;
 
 // Basic Auth Handlers (checks, login, logout)
 #[allow(clippy::future_not_send)]
@@ -43,18 +44,16 @@ pub async fn check_auth(session: TypedSession) -> HttpResponse {
     }
 }
 
-#[allow(clippy::missing_errors_doc)]
 #[allow(clippy::future_not_send)]
 #[tracing::instrument(
     skip(pool, session),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
-    _conn: ConnectionInfo,
     request: web::Form<Credentials>,
     pool: web::Data<PgPool>,
     session: TypedSession,
-) -> Result<HttpResponse, Auth> {
+) -> Result<HttpResponse, AuthError> {
     let (user_id, totp_enabled, must_change_password, user_role) =
         validate_credentials(request.0, &pool).await?;
 
@@ -65,24 +64,23 @@ pub async fn login(
         session.clear_user_id();
         session
             .insert_mfa_pending_user_id(user_id)
-            .map_err(|e| Auth::Unexpected(e.into()))?;
+            .map_err(|e| AuthError::Unexpected(e.into()))?;
 
         Ok(HttpResponse::Accepted().json(serde_json::json!({ "mfa_required": true })))
     } else {
         session
             .insert_user_id(user_id)
-            .map_err(|e| Auth::Unexpected(e.into()))?;
+            .map_err(|e| AuthError::Unexpected(e.into()))?;
         session
             .insert_user_role(user_role)
-            .map_err(|e| Auth::Unexpected(e.into()))?;
+            .map_err(|e| AuthError::Unexpected(e.into()))?;
 
         Ok(ok_must_change(must_change_password))
     }
 }
 
-#[allow(clippy::missing_errors_doc)]
 #[allow(clippy::future_not_send)]
-pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Error> {
+pub async fn logout(session: TypedSession) -> Result<HttpResponse, AuthError> {
     session.log_out();
     Ok(HttpResponse::Ok().finish())
 }
@@ -94,13 +92,15 @@ pub async fn totp_setup(
     pool: web::Data<PgPool>,
     user_id: UserId,
     encryption_key: web::Data<TotpEncryptionKey>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let totp_enabled = is_totp_enabled(pool.as_ref(), *user_id)
         .await
-        .map_err(e500)?;
+        .map_err(|e| AuthError::Unexpected(e.into()))?;
 
     if totp_enabled {
-        return Ok(HttpResponse::Conflict().finish());
+        return Err(AuthError::Conflict(
+            "TOTP is already enabled for this user".into(),
+        ));
     }
 
     // generate a secret and encode
@@ -108,7 +108,7 @@ pub async fn totp_setup(
     let secret_b32 = secret.to_encoded().to_string();
     let encrypted = encrypt(&encryption_key.0, secret_b32.as_bytes())
         .context("Failed to encrypt TOTP secret")
-        .map_err(e500)?;
+        .map_err(AuthError::Unexpected)?;
 
     sqlx::query!(
         "UPDATE users SET totp_secret = $1 WHERE user_id = $2",
@@ -118,9 +118,9 @@ pub async fn totp_setup(
     .execute(pool.as_ref())
     .await
     .context("Failed to store pending TOTP secret")
-    .map_err(e500)?;
+    .map_err(AuthError::Unexpected)?;
 
-    let totp = build_totp(secret_b32, *user_id).map_err(e500)?;
+    let totp = build_totp(secret_b32, *user_id).map_err(AuthError::Unexpected)?;
 
     let otpauth_uri = totp.get_url();
 
@@ -133,7 +133,7 @@ pub async fn totp_confirm(
     pool: web::Data<PgPool>,
     user_id: UserId,
     encryption_key: web::Data<TotpEncryptionKey>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let row = sqlx::query!(
         "SELECT totp_secret, totp_enabled FROM users WHERE user_id =  $1",
         *user_id,
@@ -141,21 +141,26 @@ pub async fn totp_confirm(
     .fetch_one(pool.as_ref())
     .await
     .context("Failed to fetch TOTP state")
-    .map_err(e500)?;
+    .map_err(AuthError::Unexpected)?;
 
     // reject if already enabled or no secret
     if row.totp_enabled {
-        return Ok(HttpResponse::Conflict().finish());
+        return Err(AuthError::Conflict(
+            "TOTP is already enabled for this user".into(),
+        ));
     }
 
     let encrypted = row
         .totp_secret
-        .ok_or_else(|| actix_web::error::ErrorBadRequest("No TOTP setup in progress"))?;
+        .ok_or_else(|| AuthError::BadRequest("No TOTP setup in progress".into()))?;
 
-    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id.0).map_err(e500)?;
+    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id.0)
+        .map_err(AuthError::Unexpected)?;
 
-    if !totp.check_current(&request.code).map_err(e500)? {
-        return Ok(HttpResponse::Unauthorized().finish());
+    if !totp.check_current(&request.code).unwrap_or(false) {
+        return Err(AuthError::Unauthorized(
+            "Invalid TOTP verification code".into(),
+        ));
     }
 
     sqlx::query!(
@@ -165,7 +170,7 @@ pub async fn totp_confirm(
     .execute(pool.as_ref())
     .await
     .context("Failed to enable TOTP")
-    .map_err(e500)?;
+    .map_err(AuthError::Unexpected)?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -180,32 +185,34 @@ pub async fn verify_totp(
     pool: web::Data<PgPool>,
     session: TypedSession,
     encryption_key: web::Data<TotpEncryptionKey>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let user_id = session
         .get_mfa_pending_user_id()
-        .map_err(e500)?
-        .ok_or_else(|| actix_web::error::ErrorUnauthorized("No MFA session in progress"))?;
+        .map_err(|e| AuthError::Unexpected(e.into()))?
+        .ok_or_else(|| AuthError::Unauthorized("No MFA session in progress".into()))?;
 
     let TotpQuery {
         secret: encrypted,
         role: user_role,
         must_change_password,
     } = get_totp_secret_role_and_flags(user_id, &pool)
-        .await
-        .map_err(e500)?
+        .await?
         .ok_or_else(|| {
-            actix_web::error::ErrorUnauthorized(format!("TOTP not configured for user: {user_id}"))
+            AuthError::Unauthorized(format!("TOTP not configured for user: {user_id}"))
         })?;
 
-    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id).map_err(e500)?;
+    let totp = totp_from_encrypted(&encryption_key.0, &encrypted, user_id)
+        .map_err(AuthError::Unexpected)?;
 
     if totp.check_current(&request.code).unwrap_or(false) {
         session.clear_mfa_pending();
-        session.insert_user_id(user_id).map_err(e500)?;
-        session.insert_user_role(user_role).map_err(e500)?;
+        session.insert_user_id(user_id)?;
+        session.insert_user_role(user_role)?;
         Ok(ok_must_change(must_change_password))
     } else {
-        Ok(HttpResponse::Unauthorized().finish())
+        Err(AuthError::Unauthorized(
+            "Invalid TOTP verification code".into(),
+        ))
     }
 }
 
@@ -214,12 +221,12 @@ pub async fn totp_disable(
     request: web::Json<DisableTotpRequest>,
     pool: web::Data<PgPool>,
     user_id: UserId,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let username = sqlx::query_scalar!("SELECT username FROM users WHERE user_id = $1", *user_id,)
         .fetch_one(pool.as_ref())
         .await
         .context("Failed to fetch username")
-        .map_err(e500)?;
+        .map_err(AuthError::Unexpected)?;
 
     // revalidate before allowing removal
     let credentials = Credentials {
@@ -229,7 +236,7 @@ pub async fn totp_disable(
 
     validate_credentials(credentials, &pool)
         .await
-        .map_err(|_| actix_web::error::ErrorUnauthorized("Invalid password"))?;
+        .map_err(|_| AuthError::Unauthorized("Invalid password".into()))?;
 
     sqlx::query!(
         "UPDATE users SET totp_secret = NULL, totp_enabled = FALSE WHERE user_id = $1",
@@ -238,7 +245,7 @@ pub async fn totp_disable(
     .execute(pool.as_ref())
     .await
     .context("Failed to disable TOTP")
-    .map_err(e500)?;
+    .map_err(AuthError::Unexpected)?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -247,34 +254,35 @@ pub async fn totp_disable(
 pub async fn totp_status(
     pool: web::Data<PgPool>,
     user_id: UserId,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let enabled = is_totp_enabled(pool.as_ref(), user_id.0)
         .await
         .context("Failed to query TOTP status")
-        .map_err(e500)?;
+        .map_err(AuthError::Unexpected)?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({ "totp_enabled": enabled })))
 }
 
 // User Management
 
-pub async fn get_all_users(pool: web::Data<PgPool>) -> Result<HttpResponse, actix_web::Error> {
+pub async fn get_all_users(pool: web::Data<PgPool>) -> Result<HttpResponse, AuthError> {
     let users = query_users(pool.as_ref())
         .await
         .context("Failed to query users from the database.")
-        .map_err(e500)?;
+        .map_err(AuthError::Unexpected)?;
 
     Ok(HttpResponse::Ok().json(users))
 }
 
 #[tracing::instrument(name = "Create user invitation", skip_all)]
+#[allow(clippy::future_not_send)]
 pub async fn create_user(
     new_user: web::Json<CreateUser>,
     pool: web::Data<PgPool>,
     request: HttpRequest,
     user_id: UserId,
     base_url: web::Data<ApplicationBaseUrl>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let user_to_create = new_user.into_inner();
     user_to_create.validate()?;
 
@@ -289,7 +297,7 @@ async fn process_create_new_user(
     transaction: &mut sqlx::Transaction<'static, sqlx::Postgres>,
     new_user: CreateUser,
     base_url: &str,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     // random raw token
     let raw_token: String = rand::rng()
         .sample_iter(&Alphanumeric)
@@ -303,22 +311,15 @@ async fn process_create_new_user(
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
     let invitation_id = uuid::Uuid::new_v4();
 
-    sqlx::query!(
-        r#"
-        INSERT INTO user_invitations (id, email, role, invitation_token_hash, expires_at, created_at)
-        VALUES ($1, $2, $3, $4, $5, NOW())
-        "#,
+    insert_user_invitation(
+        transaction,
         invitation_id,
-        new_user.email,
-        "user".to_string(), // default to "user" role for invitations, admin can change later
-        token_hash,
+        &new_user.email,
+        UserRole::User,
+        &token_hash,
         expires_at,
     )
-    .execute(transaction.as_mut())
-    .await
-    .map_err(|e| {
-        actix_web::error::ErrorInternalServerError(format!("Failed to create user invitation: {}", e))
-    })?;
+    .await?;
 
     // sidestepping an email service, don't really wanna implement that for this project
     let response_data = serde_json::json!({
@@ -334,70 +335,46 @@ async fn process_create_new_user(
 pub async fn accept_invitation(
     params: web::Json<AcceptInvitationParams>,
     pool: web::Data<PgPool>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let token_hash = sha256_hash(&params.token);
 
     // don't need idempotency here since invitation accepts are one-time
     let mut tx = pool
         .begin()
         .await
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+        .map_err(|e| AuthError::Unexpected(e.into()))?;
 
-    let invitation = sqlx::query!(
-        r#"
-        SELECT id, email, role FROM user_invitations
-        WHERE invitation_token_hash = $1
-            AND consumed_at IS NULL
-            AND expires_at > NOW()
-        "#,
-        token_hash,
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(actix_web::error::ErrorInternalServerError)?
-    .ok_or_else(|| actix_web::error::ErrorBadRequest("Invalid or expired invitation token"))?;
+    let invitation = get_invitation_from_token(&mut tx, &token_hash)
+        .await?
+        .ok_or_else(|| AuthError::Unauthorized("Invalid or expired invitation token".into()))?;
 
     let password_secret = SecretString::new(params.password.clone().into());
 
-    let password_hash = compute_password_hash(&password_secret)
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+    let password_hash = compute_password_hash(&password_secret).map_err(AuthError::Unexpected)?;
+
     let new_user_id = uuid::Uuid::new_v4();
 
-    let insert = sqlx::query!(
-        r#"
-        INSERT INTO users (user_id, username, password_hash, role)
-        VALUES ($1, $2, $3, $4::text::user_role)
-        "#,
+    let insert_result = insert_user(
+        &mut tx,
         new_user_id,
-        params.username,
+        &params.username,
         password_hash.expose_secret(),
-        &invitation.role
+        invitation.1,
     )
-    .execute(&mut *tx)
-    .await
-    .map_err(actix_web::error::ErrorInternalServerError)?;
+    .await?;
 
-    let consume = sqlx::query!(
-        r#"UPDATE user_invitations SET consumed_at = NOW() WHERE id = $1"#,
-        invitation.id
-    )
-    .execute(&mut *tx)
-    .await
-    .map_err(actix_web::error::ErrorInternalServerError)?;
-
-    match (insert.rows_affected(), consume.rows_affected()) {
-        (1, 1) => tx
-            .commit()
-            .await
-            .map_err(actix_web::error::ErrorInternalServerError)?,
-        _ => {
-            tx.rollback()
-                .await
-                .map_err(actix_web::error::ErrorInternalServerError)?;
-            return Err(actix_web::error::ErrorInternalServerError(
-                "Failed to create user record",
-            ));
-        }
+    let consume_result = consume_invitation(&mut tx, invitation.0).await?;
+    if (
+        insert_result.rows_affected(),
+        consume_result.rows_affected(),
+    ) == (1, 1)
+    {
+        tx.commit().await?;
+    } else {
+        tx.rollback().await?;
+        return Err(AuthError::Unexpected(anyhow::anyhow!(
+            "Failed to atomically create user and consume invitation"
+        )));
     }
 
     Ok(HttpResponse::Ok().finish())
@@ -407,22 +384,18 @@ pub async fn update_user_password(
     pool: web::Data<PgPool>,
     body: web::Json<ChangePasswordBody>,
     user_id: UserId,
-) -> Result<HttpResponse, Auth> {
+) -> Result<HttpResponse, AuthError> {
     let body = body.into_inner();
 
     let credentials = Credentials {
         // Just borrow the pool with .as_ref(), pass auth error up cleanly
-        username: get_username_by_id(pool.as_ref(), *user_id)
-            .await
-            .map_err(|e| Auth::Unexpected(e.into()))?,
+        username: get_username_by_id(pool.as_ref(), *user_id).await?,
         password: body.current_password.clone(),
     };
 
     validate_credentials(credentials, &pool).await?;
 
-    change_password(*user_id, body.new_password, pool.as_ref())
-        .await
-        .map_err(|e| Auth::Unexpected(e.into()))?;
+    change_password(*user_id, body.new_password, pool.as_ref()).await?;
 
     Ok(HttpResponse::Accepted().finish())
 }
@@ -431,12 +404,10 @@ pub async fn set_user_role(
     pool: web::Data<PgPool>,
     user_id: web::Path<Uuid>,
     new_role: web::Json<RoleUpdate>,
-) -> Result<HttpResponse, actix_web::Error> {
+) -> Result<HttpResponse, AuthError> {
     let params = new_role.into_inner();
 
-    update_user_role(pool.get_ref(), *user_id, params.role)
-        .await
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+    update_user_role(pool.get_ref(), *user_id, params.role).await?;
 
     Ok(HttpResponse::Ok().finish())
 }
@@ -444,10 +415,8 @@ pub async fn set_user_role(
 pub async fn reset_password(
     pool: web::Data<PgPool>,
     user_id: web::Path<Uuid>,
-) -> Result<HttpResponse, actix_web::Error> {
-    force_password_reset(pool.get_ref(), *user_id)
-        .await
-        .map_err(actix_web::error::ErrorInternalServerError)?;
+) -> Result<HttpResponse, AuthError> {
+    force_password_reset(pool.get_ref(), *user_id).await?;
 
     Ok(HttpResponse::Ok().finish())
 }

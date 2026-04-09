@@ -8,7 +8,6 @@ use super::models::UserRole;
 // wrapper type for session
 pub struct TypedSession(pub Session);
 
-#[allow(clippy::missing_errors_doc)]
 impl TypedSession {
     const USER_ID_KEY: &'static str = "user_id";
     const MFA_PENDING_KEY: &'static str = "mfa_pending_user_id";

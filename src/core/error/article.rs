@@ -1,11 +1,11 @@
 use actix_web::{HttpResponse, ResponseError, http::StatusCode};
 
-use crate::core::error::Idempotency;
+use crate::core::error::IdempotencyError;
 
 use super::response::{AppError, build_error_response};
 
 #[derive(thiserror::Error, Debug)]
-pub enum Blog {
+pub enum ArticleError {
     // Domain rule errors — safe to surface
     #[error("Post not found")]
     NotFound,
@@ -24,10 +24,10 @@ pub enum Blog {
     #[error(transparent)]
     Unexpected(#[from] anyhow::Error),
     #[error(transparent)]
-    Idempotency(#[from] Idempotency),
+    Idempotency(#[from] IdempotencyError),
 }
 
-impl AppError for Blog {
+impl AppError for ArticleError {
     fn code(&self) -> &'static str {
         match self {
             Self::NotFound => "not_found",
@@ -65,12 +65,14 @@ impl AppError for Blog {
             Self::Validation(_) | Self::BadRequest(_) => StatusCode::BAD_REQUEST,
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::DuplicatePost | Self::SlugConflict => StatusCode::CONFLICT,
-            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Database(_) | Self::Unexpected(_) | Self::Idempotency(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
         }
     }
 }
 
-impl ResponseError for Blog {
+impl ResponseError for ArticleError {
     fn status_code(&self) -> StatusCode {
         self.http_status()
     }
@@ -86,21 +88,21 @@ mod tests {
 
     #[test]
     fn correct_status_code() {
-        let e = Blog::NotFound;
+        let e = ArticleError::NotFound;
         assert_eq!(e.status_code(), StatusCode::NOT_FOUND);
-        let e = Blog::DuplicatePost;
+        let e = ArticleError::DuplicatePost;
         assert_eq!(e.status_code(), StatusCode::CONFLICT);
-        let e = Blog::SlugConflict;
+        let e = ArticleError::SlugConflict;
         assert_eq!(e.status_code(), StatusCode::CONFLICT);
-        let e = Blog::Validation("bad content".into());
+        let e = ArticleError::Validation("bad content".into());
         assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
-        let e = Blog::BadRequest("no fields provided".into());
+        let e = ArticleError::BadRequest("no fields provided".into());
         assert_eq!(e.status_code(), StatusCode::BAD_REQUEST);
-        let e = Blog::Database(sqlx::Error::RowNotFound);
+        let e = ArticleError::Database(sqlx::Error::RowNotFound);
         assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-        let e = Blog::Unexpected(anyhow::anyhow!("unexpected"));
+        let e = ArticleError::Unexpected(anyhow::anyhow!("unexpected"));
         assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
-        let e = Blog::Idempotency(Idempotency::InFlight);
+        let e = ArticleError::Idempotency(IdempotencyError::InFlight);
         assert_eq!(e.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

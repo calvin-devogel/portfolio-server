@@ -18,7 +18,10 @@ use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
 
-use crate::core::{CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings};
+use crate::core::{
+    CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings,
+    error::ApiErrorResponse,
+};
 
 use crate::api::middleware::{csrf_protection, reject_non_admin, reject_unauthenticated};
 use crate::modules::auth::{
@@ -73,9 +76,7 @@ impl Application {
             db_host = %configuration.database.host,
         )
     )]
-    #[allow(clippy::missing_errors_doc)]
-    /// # Panics
-    /// probably not a bad idea to handle port binding issues gracefully
+    
     pub async fn build(configuration: Settings) -> Result<Self, anyhow::Error> {
         let connection_pool = get_connection_pool(&configuration.database);
 
@@ -164,7 +165,6 @@ impl Application {
         self.port
     }
 
-    #[allow(clippy::missing_errors_doc)]
     // only return when the application is stopped
     pub async fn run_until_stopped(self) -> Result<(), std::io::Error> {
         self.server.await
@@ -173,7 +173,7 @@ impl Application {
 
 // run the actual server
 #[tracing::instrument(name = "Application::run", level = "info", skip_all)]
-#[allow(clippy::missing_errors_doc, clippy::too_many_lines)]
+#[allow(clippy::too_many_lines)]
 async fn run(
     listener: TcpListener,
     db_pool: PgPool,
@@ -268,11 +268,13 @@ async fn run(
                         web::scope("/admin")
                             .app_data(web::JsonConfig::default().limit(65_536).error_handler(
                                 |err, _req| {
-                                    actix_web::error::InternalError::from_response(
-                                        err,
-                                        HttpResponse::PayloadTooLarge().finish(),
-                                    )
-                                    .into()
+                                    let response =
+                                        HttpResponse::BadRequest().json(ApiErrorResponse {
+                                            code: "invalid_json_payload",
+                                            message: err.to_string(),
+                                        });
+                                    actix_web::error::InternalError::from_response(err, response)
+                                        .into()
                                 },
                             ))
                             .wrap({
