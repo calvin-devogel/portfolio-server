@@ -33,7 +33,7 @@ pub async fn check_auth(session: TypedSession) -> HttpResponse {
     match session.get_user_id() {
         Ok(Some(_)) => {
             // renew session on each check_auth to extend TTL
-            session.renew();
+            // session.renew();
             let user_role = session.get_user_role();
             match user_role {
                 Ok(Some(role)) => HttpResponse::Ok().json(role.to_string()),
