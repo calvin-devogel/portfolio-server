@@ -96,8 +96,11 @@ pub async fn csrf_protection(
         req.method(),
         &Method::GET | &Method::HEAD | &Method::OPTIONS
     );
+    
+    let csrf_exempt = ["/v1/web_vitals"];
+    let is_exempt = csrf_exempt.iter().any(|p| req.path() == *p);
 
-    if !is_safe {
+    if !is_safe && !is_exempt {
         let cookie_val = req.cookie(XSRF_COOKIE_NAME).map(|c| c.value().to_string());
         let header_val = req
             .headers()
