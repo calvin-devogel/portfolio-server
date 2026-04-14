@@ -62,3 +62,5 @@ jsonwebtoken = { version = "10.3.0", features = ["use_pem", "aws_lc_rs"]}
 rand = "0.10.0"
 sha2 = "0.11.0"
 hex = "0.4.3"
+actix-web-prom = "0.10.0"
+prometheus = "0.14.0"

@@ -8,6 +8,7 @@ use crate::{
     core::error::ContactError,
     core::{MessageRateLimitSettings, PaginationMeta, PaginationQuery},
     modules::auth::UserId,
+    modules::metrics::AppMetrics,
 };
 
 // Import DB logic and Data models
@@ -110,7 +111,7 @@ async fn process_patch_message(
 
 #[tracing::instrument(
     name = "Send message to contact table",
-    skip(message, pool, request, message_config),
+    skip(message, pool, request, message_config, app_metrics),
     fields(
         email = %message.email,
         message_id = tracing::field::Empty
@@ -122,17 +123,22 @@ pub async fn post_message(
     pool: web::Data<PgPool>,
     request: HttpRequest,
     message_config: web::Data<MessageRateLimitSettings>,
+    app_metrics: web::Data<AppMetrics>,
+
 ) -> Result<HttpResponse, ContactError> {
     let message_to_post = message.0;
     let config_for_op = message_config.clone();
 
-    execute_idempotent(&request, pool.get_ref(), None, move |tx| {
+    let response = execute_idempotent(&request, pool.get_ref(), None, move |tx| {
         let config_for_op = config_for_op.clone();
         Box::pin(
             async move { process_new_message(tx, config_for_op.get_ref(), message_to_post).await },
         )
     })
-    .await
+    .await?;
+
+    app_metrics.contact_messages_total.inc();
+    Ok(response)
 }
 
 #[allow(clippy::future_not_send)]

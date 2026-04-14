@@ -7,7 +7,7 @@ use actix_session::{
 use actix_web::{
     App, HttpResponse, HttpServer,
     cookie::{Key, SameSite},
-    dev::Server,
+    dev::{Server},
     http,
     middleware::from_fn,
     web::{self, Data},
@@ -17,6 +17,7 @@ use secrecy::{ExposeSecret, SecretString};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::net::TcpListener;
 use tracing_actix_web::TracingLogger;
+use actix_web_prom::{PrometheusMetricsBuilder};
 
 use crate::core::{
     CorsSettings, DatabaseSettings, RateLimitSettings, Settings, TtlSettings,
@@ -35,6 +36,7 @@ use crate::modules::blog::{
 use crate::modules::chat::chat_token;
 use crate::modules::contact::{get_messages, patch_message, post_message};
 use crate::modules::root::{health_check, root};
+use crate::modules::metrics::{WebVitalsMetrics, init_registry, post_web_vitals};
 
 #[derive(serde::Deserialize, Clone)]
 struct UtilConfig {
@@ -190,6 +192,14 @@ async fn run(
         .build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
 
+    let (registry, app_metrics) = init_registry();
+    let web_vitals_metrics = WebVitalsMetrics::new(&registry);
+    let prometheus = PrometheusMetricsBuilder::new("portfolio_api")
+        .endpoint("/metrics")
+        .registry(registry)
+        .build()
+        .expect("Failed to create Prometheus metrics middleware");
+
     tracing::info!("Connecting to Redis session store...");
     let redis_store = RedisSessionStore::new(redis_uri.expose_secret())
         .await
@@ -206,6 +216,7 @@ async fn run(
     let server = HttpServer::new(move || {
         App::new()
             .wrap(message_framework.clone())
+            .wrap(prometheus.clone())
             .wrap(TracingLogger::default())
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
@@ -253,6 +264,7 @@ async fn run(
                     .route("/contact", web::post().to(post_message))
                     .route("/blog", web::get().to(get_articles))
                     .route("/accept", web::post().to(accept_invitation))
+                    .route("/web_vitals", web::post().to(post_web_vitals))
                     .service(
                         web::scope("/chat_token")
                             .wrap(from_fn(reject_unauthenticated))
@@ -322,6 +334,8 @@ async fn run(
             .app_data(Data::new(util_config.rate.message.clone()))
             .app_data(Data::new(secrets.totp.clone()))
             .app_data(Data::new(secrets.jwt.clone()))
+            .app_data(Data::new(app_metrics.clone()))
+            .app_data(Data::new(web_vitals_metrics.clone()))
     })
     .listen(listener)?
     .run();
