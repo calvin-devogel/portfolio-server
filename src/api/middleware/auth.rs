@@ -5,14 +5,17 @@ use actix_web::{
     dev::{ServiceRequest, ServiceResponse},
     http::Method,
     middleware::Next,
+    web::Data,
 };
 use uuid::Uuid;
 
 use crate::core::error::AuthError;
 use crate::modules::auth::{TypedSession, UserRole};
+use crate::api::startup::MetricsToken;
 
 const XSRF_COOKIE_NAME: &str = "XSRF-TOKEN";
 const XSRF_HEADER_NAME: &str = "X-XSRF-TOKEN";
+const CSRF_EXEMPT_PATHS: &[&str] = &["/v1/web_vitals"];
 
 #[allow(clippy::future_not_send)]
 pub async fn reject_unauthenticated(
@@ -96,8 +99,10 @@ pub async fn csrf_protection(
         req.method(),
         &Method::GET | &Method::HEAD | &Method::OPTIONS
     );
+    
+    let is_exempt = CSRF_EXEMPT_PATHS.iter().any(|p| req.path() == *p);
 
-    if !is_safe {
+    if !is_safe && !is_exempt {
         let cookie_val = req.cookie(XSRF_COOKIE_NAME).map(|c| c.value().to_string());
         let header_val = req
             .headers()
@@ -136,4 +141,35 @@ pub async fn csrf_protection(
         .map_err(actix_web::error::ErrorInternalServerError)?;
 
     Ok(res)
+}
+
+#[allow(clippy::future_not_send)]
+pub async fn require_metrics_token(
+    req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<impl MessageBody>, actix_web::Error> {
+    let expected = req
+        .app_data::<Data<MetricsToken>>()
+        .map(|t| t.0.expose_secret().as_str());
+
+    let provided = req
+        .headers()
+        .get(http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+
+    match (expected, provided) {
+        (Some(expected_val), Some(provided_val))
+            if constant_time_eq::constant_time_eq(
+                expected_val.as_bytes(),
+                provided_val.as_bytes()
+            ) =>
+        {
+            next.call(req).await
+        }
+        _ => {
+            tracing::warn!("Unauthorized request to metrics endpoint");
+            Err(AuthError::Unauthorized("Invalid or missing metrics token".to_string()).into())
+        }
+    }
 }

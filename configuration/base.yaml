@@ -5,6 +5,8 @@ application:
   hmac_secret: "long-and-very-secret-random-key-needed-to-verify-message-integrity"
   # also a fake secret, provided at runtime
   totp_encryption_key: "f2e4f32183efde11831c64557303bf22"
+  # fake!
+  metrics_token: "local-dev-token"
 database:
   host: "localhost"
   port: 5432

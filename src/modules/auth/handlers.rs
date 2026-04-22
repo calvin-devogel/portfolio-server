@@ -25,6 +25,7 @@ use crate::api::idempotency::execute_idempotent;
 use crate::api::startup::ApplicationBaseUrl;
 
 use crate::core::error::AuthError;
+use crate::modules::metrics::AppMetrics;
 
 // Basic Auth Handlers (checks, login, logout)
 #[allow(clippy::future_not_send)]
@@ -45,16 +46,20 @@ pub async fn check_auth(session: TypedSession) -> HttpResponse {
 
 #[allow(clippy::future_not_send)]
 #[tracing::instrument(
-    skip(pool, session),
+    skip(pool, session, app_metrics),
     fields(username=tracing::field::Empty, user_id=tracing::field::Empty)
 )]
 pub async fn login(
     request: web::Form<Credentials>,
     pool: web::Data<PgPool>,
     session: TypedSession,
+    app_metrics: web::Data<AppMetrics>,
 ) -> Result<HttpResponse, AuthError> {
     let (user_id, totp_enabled, must_change_password, user_role) =
-        validate_credentials(request.0, &pool).await?;
+        validate_credentials(request.0, &pool).await.map_err(|e| {
+            app_metrics.auth_login_total.with_label_values(&["failure"]).inc();
+            e
+        })?;
 
     tracing::Span::current().record("user_id", tracing::field::display(&user_id));
     session.renew();
@@ -73,7 +78,7 @@ pub async fn login(
         session
             .insert_user_role(user_role)
             .map_err(|e| AuthError::Unexpected(e.into()))?;
-
+        app_metrics.auth_login_total.with_label_values(&["success"]).inc();
         Ok(ok_must_change(must_change_password))
     }
 }
@@ -182,13 +187,14 @@ pub async fn totp_confirm(
 #[allow(clippy::future_not_send)]
 #[tracing::instrument(
     name = "Verify TOTP code",
-    skip(pool, session, request, encryption_key)
+    skip(pool, session, request, encryption_key, app_metrics)
 )]
 pub async fn verify_totp(
     request: web::Json<TotpRequest>,
     pool: web::Data<PgPool>,
     session: TypedSession,
     encryption_key: web::Data<TotpEncryptionKey>,
+    app_metrics: web::Data<AppMetrics>
 ) -> Result<HttpResponse, AuthError> {
     let user_id = session
         .get_mfa_pending_user_id()
@@ -217,8 +223,10 @@ pub async fn verify_totp(
         session.clear_mfa_pending();
         session.insert_user_id(user_id)?;
         session.insert_user_role(user_role)?;
+        app_metrics.auth_login_total.with_label_values(&["success"]).inc();
         Ok(ok_must_change(must_change_password))
     } else {
+        app_metrics.auth_login_total.with_label_values(&["failure"]).inc();
         Err(AuthError::Unauthorized(
             "Invalid TOTP verification code".into(),
         ))

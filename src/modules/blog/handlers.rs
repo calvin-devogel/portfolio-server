@@ -5,7 +5,8 @@ use uuid::Uuid;
 use crate::{
     api::idempotency::execute_idempotent,
     core::{PaginatedResponse, PaginationMeta, PaginationQuery, error::ArticleError},
-    modules::auth::{TypedSession, UserId},
+    modules::auth::{TypedSession, UserId, UserRole},
+    modules::metrics::AppMetrics,
 };
 
 use super::models::{
@@ -255,7 +256,7 @@ fn parse_header<T: std::str::FromStr>(req: &HttpRequest, key: &str) -> Option<T>
 
 #[tracing::instrument(
     name = "Get blog posts with pagination",
-    skip(pool, session),
+    skip(pool, session, app_metrics),
     fields(page, page_size, on_published, slug)
 )]
 #[allow(clippy::future_not_send)]
@@ -263,6 +264,7 @@ pub async fn get_articles(
     request: HttpRequest,
     pool: web::Data<PgPool>,
     session: TypedSession,
+    app_metrics: web::Data<AppMetrics>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let pagination = PaginationQuery {
         page: parse_header(&request, "BlogPost-Page").unwrap_or(1),
@@ -312,6 +314,17 @@ pub async fn get_articles(
         data: articles,
         pagination: PaginationMeta::from_total(total_count, &pagination),
     };
+
+    let is_admin = session
+        .get_user_role()
+        .ok()
+        .flatten()
+        .map(|r| r == UserRole::Admin)
+        .unwrap_or(false);
+
+    if !is_admin && slug.is_some() && on_published {
+        app_metrics.blog_views_total.inc();
+    }
 
     Ok(HttpResponse::Ok().json(response))
 }

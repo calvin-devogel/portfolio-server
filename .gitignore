@@ -2,3 +2,4 @@
 /generic_queries
 *.pem
 .envrc
+*.gz
