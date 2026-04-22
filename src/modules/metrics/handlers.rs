@@ -65,7 +65,7 @@ impl WebVitalsMetrics {
     pub fn new(registry: &Registry) -> Self {
         let histogram = HistogramVec::new(
             HistogramOpts::new("web_vitals", "Core Web Vitals")
-                .namespace("portfolio")
+                .namespace("portfolio_api")
                 .buckets(vec![0.1, 0.25, 0.5, 1.0, 2.5, 4.0, 10.0]),
             &["metric", "rating", "pathname"],
         )
@@ -103,26 +103,37 @@ pub async fn post_web_vitals(
             WebVitalName::Fcp => "FCP",
         };
 
-        let rating = format!("{:?}", entry.rating).to_lowercase();
+        let rating = entry.rating.to_string();
         let pathname = sanitize_pathname(&entry.pathname);
+        let observed_value = normalize_metric_value(&entry.name, entry.value);
 
         metrics
             .histogram
             .with_label_values(&[metric_name, &rating, &pathname])
-            .observe(entry.value / 1000.0); // ms -> seconds
+            .observe(observed_value);
     }
 
     Ok(HttpResponse::Ok().finish())
 }
 
-fn sanitize_pathname(raw: &str) -> String {
-    let without_query = raw.split('?').next().unwrap_or("/");
-    let truncated: String = without_query.chars().take(100).collect();
+fn normalize_metric_value(name: &WebVitalName, value: f64) -> f64 {
+    match name {
+        WebVitalName::Lcp | WebVitalName::Inp | WebVitalName::Ttfb | WebVitalName::Fcp => {
+            value / 1000.0
+        }
+        WebVitalName::Cls => value,
+    }
+}
 
-    if truncated.starts_with("/blog/") {
-        "/blog".to_string()
-    } else {
-        truncated
+fn sanitize_pathname(raw: &str) -> &'static str {
+    let path = raw.split('?').next().unwrap_or("/");
+    match path {
+        p if p.eq("/") => "/",
+        p if p.starts_with("/blog") => "/blog",
+        p if p.starts_with("/projects") => "/projects",
+        p if p.starts_with("/resume") => "/resume",
+        p if p.starts_with("/chat") => "/chat",
+        _ => "other",
     }
 }
 
@@ -132,8 +143,9 @@ mod tests {
 
     #[test]
     fn test_sanitize_pathname() {
-        let input = "/blog/portfolio-retrospective-pt-one";
-        let expected = "/blog";
-        assert_eq!(sanitize_pathname(input), expected);
+        assert_eq!(sanitize_pathname("/blog/portfolio-retrospective-pt-one"), "/blog");
+        assert_eq!(sanitize_pathname("/resume?ref=linkedin"), "/resume");
+        assert_eq!(sanitize_pathname("/admin/blog"), "other");
+        assert_eq!(sanitize_pathname("/unknown/path"), "other");
     }
 }

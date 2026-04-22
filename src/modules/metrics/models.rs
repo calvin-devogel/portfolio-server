@@ -32,3 +32,13 @@ pub enum WebVitalRating {
     NeedsImprovement,
     Poor,
 }
+
+impl std::fmt::Display for WebVitalRating {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WebVitalRating::Good => write!(f, "good"),
+            WebVitalRating::NeedsImprovement => write!(f, "needs-improvement"),
+            WebVitalRating::Poor => write!(f, "poor"),
+        }
+    }
+}

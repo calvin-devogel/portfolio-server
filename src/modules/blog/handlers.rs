@@ -322,7 +322,7 @@ pub async fn get_articles(
         .map(|r| r == UserRole::Admin)
         .unwrap_or(false);
 
-    if !is_admin {
+    if !is_admin && slug.is_some() && on_published {
         app_metrics.blog_views_total.inc();
     }
 
