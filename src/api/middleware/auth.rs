@@ -103,7 +103,7 @@ pub async fn csrf_protection(
             .headers()
             .get(XSRF_HEADER_NAME)
             .and_then(|v| v.to_str().ok())
-            .map(&str::to_string);
+            .map(str::to_string);
 
         match (cookie_val, header_val) {
             (Some(c), Some(h)) if !c.is_empty() && c == h => {}
