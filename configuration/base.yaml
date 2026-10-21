@@ -15,4 +15,6 @@ database:
 ttl:
   ttl_hours: 1
   idle_timeout_minutes: 15
+# Redis is optional at startup; public blog/contact routes remain available while
+# session-dependent features (including login and chat) return 503.
 redis_uri: "redis://127.0.0.1:6379"

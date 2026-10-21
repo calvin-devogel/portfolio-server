@@ -191,92 +191,51 @@ async fn run(
     let message_framework = FlashMessagesFramework::builder(message_store).build();
 
     tracing::info!("Connecting to Redis session store...");
-    let redis_store = RedisSessionStore::new(redis_uri.expose_secret())
-        .await
-        .map_err(|e| {
-            tracing::error!(
+    let redis_store = match RedisSessionStore::new(redis_uri.expose_secret()).await {
+        Ok(redis_store) => {
+            tracing::info!("Redis session store connected");
+            Some(redis_store)
+        }
+        Err(e) => {
+            tracing::warn!(
                 error.cause_chain = ?e,
                 error.message = %e,
-                "Failed to connect to Redis session store"
+                "Redis session store unavailable; session-dependent API features will be disabled"
             );
-            anyhow::anyhow!("Redis session store connection failed: {e}")
-        })?;
-    tracing::info!("Redis session store connected");
+            None
+        }
+    };
 
     let server = HttpServer::new(move || {
+        let redis_store = redis_store.clone();
+        let secret_key = secret_key.clone();
+        let util_config = util_config.clone();
         App::new()
             .wrap(message_framework.clone())
             .wrap(TracingLogger::default())
             .route("/", web::get().to(root))
             .route("/health_check", web::get().to(health_check))
-            .service(
-                web::scope("/v1")
-                    .wrap(from_fn(csrf_protection))
-                    .wrap(
-                        SessionMiddleware::builder(redis_store.clone(), secret_key.clone())
-                            .cookie_same_site(SameSite::Strict)
-                            .cookie_http_only(true)
-                            .cookie_secure(true)
-                            .session_lifecycle(
-                                PersistentSession::default()
-                                    .session_ttl(actix_web::cookie::time::Duration::hours(
-                                        util_config.ttl.ttl_hours,
-                                    ))
-                                    .session_ttl_extension_policy(
-                                        TtlExtensionPolicy::OnEveryRequest,
-                                    ),
+            .configure(move |cfg: &mut web::ServiceConfig| {
+                if let Some(redis_store) = redis_store {
+                    cfg.service(
+                        web::scope("/v1")
+                            .wrap(from_fn(csrf_protection))
+                            .wrap(
+                                SessionMiddleware::builder(redis_store, secret_key.clone())
+                                    .cookie_same_site(SameSite::Strict)
+                                    .cookie_http_only(true)
+                                    .cookie_secure(true)
+                                    .session_lifecycle(
+                                        PersistentSession::default()
+                                            .session_ttl(actix_web::cookie::time::Duration::hours(
+                                                util_config.ttl.ttl_hours,
+                                            ))
+                                            .session_ttl_extension_policy(
+                                                TtlExtensionPolicy::OnEveryRequest,
+                                            ),
+                                    )
+                                    .build(),
                             )
-                            .build(),
-                    )
-                    .wrap({
-                        let mut cors = Cors::default();
-
-                        for origin in &util_config.cors.allowed_origins {
-                            cors = cors.allowed_origin(origin);
-                        }
-
-                        cors.allowed_methods(vec!["GET", "POST"])
-                            .allowed_headers(vec![
-                                http::header::AUTHORIZATION,
-                                http::header::ACCEPT,
-                                http::header::CONTENT_TYPE,
-                                http::header::HeaderName::from_static("idempotency-key"),
-                                http::header::HeaderName::from_static("x-xsrf-token"),
-                            ])
-                            .supports_credentials()
-                            .max_age(util_config.cors.max_age)
-                    })
-                    .route("/login", web::post().to(login))
-                    .route("/verify_totp", web::post().to(verify_totp))
-                    .route("/logout", web::post().to(logout))
-                    .route("/check_auth", web::get().to(check_auth))
-                    .route("/contact", web::post().to(post_message))
-                    .route("/blog", web::get().to(get_articles))
-                    .route("/accept", web::post().to(accept_invitation))
-                    .service(
-                        web::scope("/chat_token")
-                            .wrap(from_fn(reject_unauthenticated))
-                            // UserId needs to implement FromRequest?
-                            .route("", web::get().to(chat_token)),
-                    )
-                    .service(
-                        web::scope("/change_password")
-                            .wrap(from_fn(reject_unauthenticated))
-                            .route("", web::post().to(update_user_password)),
-                    )
-                    .service(
-                        web::scope("/admin")
-                            .app_data(web::JsonConfig::default().limit(65_536).error_handler(
-                                |err, _req| {
-                                    let response =
-                                        HttpResponse::BadRequest().json(ApiErrorResponse {
-                                            code: "invalid_json_payload",
-                                            message: err.to_string(),
-                                        });
-                                    actix_web::error::InternalError::from_response(err, response)
-                                        .into()
-                                },
-                            ))
                             .wrap({
                                 let mut cors = Cors::default();
 
@@ -284,7 +243,7 @@ async fn run(
                                     cors = cors.allowed_origin(origin);
                                 }
 
-                                cors.allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
+                                cors.allowed_methods(vec!["GET", "POST"])
                                     .allowed_headers(vec![
                                         http::header::AUTHORIZATION,
                                         http::header::ACCEPT,
@@ -295,27 +254,135 @@ async fn run(
                                     .supports_credentials()
                                     .max_age(util_config.cors.max_age)
                             })
-                            .wrap(from_fn(reject_unauthenticated))
-                            .wrap(from_fn(reject_non_admin))
-                            .route("/create_user", web::post().to(create_user))
-                            .route("/users", web::get().to(get_all_users))
-                            .route("/users/{user_id}/role", web::patch().to(set_user_role))
-                            .route(
-                                "/users/{user_id}/reset_password",
-                                web::patch().to(reset_password),
+                            .route("/login", web::post().to(login))
+                            .route("/verify_totp", web::post().to(verify_totp))
+                            .route("/logout", web::post().to(logout))
+                            .route("/check_auth", web::get().to(check_auth))
+                            .route("/contact", web::post().to(post_message))
+                            .route("/blog", web::get().to(get_articles))
+                            .route("/accept", web::post().to(accept_invitation))
+                            .service(
+                                web::scope("/chat_token")
+                                    .wrap(from_fn(reject_unauthenticated))
+                                    // UserId needs to implement FromRequest?
+                                    .route("", web::get().to(chat_token)),
                             )
-                            .route("/messages", web::get().to(get_messages))
-                            .route("/messages", web::patch().to(patch_message))
-                            .route("/blog/post", web::post().to(insert_article))
-                            .route("/blog/publish", web::patch().to(publish_article))
-                            .route("/blog/delete", web::delete().to(delete_article))
-                            .route("/blog/edit", web::patch().to(edit_article))
-                            .route("/totp/setup", web::get().to(totp_setup))
-                            .route("/totp/confirm", web::post().to(totp_confirm))
-                            .route("/totp/disable", web::post().to(totp_disable))
-                            .route("/totp/status", web::get().to(totp_status)),
-                    ),
-            )
+                            .service(
+                                web::scope("/change_password")
+                                    .wrap(from_fn(reject_unauthenticated))
+                                    .route("", web::post().to(update_user_password)),
+                            )
+                            .service(
+                                web::scope("/admin")
+                                    .app_data(
+                                        web::JsonConfig::default().limit(65_536).error_handler(
+                                            |err, _req| {
+                                                let response = HttpResponse::BadRequest().json(
+                                                    ApiErrorResponse {
+                                                        code: "invalid_json_payload",
+                                                        message: err.to_string(),
+                                                    },
+                                                );
+                                                actix_web::error::InternalError::from_response(
+                                                    err, response,
+                                                )
+                                                .into()
+                                            },
+                                        ),
+                                    )
+                                    .wrap({
+                                        let mut cors = Cors::default();
+
+                                        for origin in &util_config.cors.allowed_origins {
+                                            cors = cors.allowed_origin(origin);
+                                        }
+
+                                        cors.allowed_methods(vec!["GET", "POST", "PATCH", "DELETE"])
+                                            .allowed_headers(vec![
+                                                http::header::AUTHORIZATION,
+                                                http::header::ACCEPT,
+                                                http::header::CONTENT_TYPE,
+                                                http::header::HeaderName::from_static(
+                                                    "idempotency-key",
+                                                ),
+                                                http::header::HeaderName::from_static(
+                                                    "x-xsrf-token",
+                                                ),
+                                            ])
+                                            .supports_credentials()
+                                            .max_age(util_config.cors.max_age)
+                                    })
+                                    .wrap(from_fn(reject_unauthenticated))
+                                    .wrap(from_fn(reject_non_admin))
+                                    .route("/create_user", web::post().to(create_user))
+                                    .route("/users", web::get().to(get_all_users))
+                                    .route("/users/{user_id}/role", web::patch().to(set_user_role))
+                                    .route(
+                                        "/users/{user_id}/reset_password",
+                                        web::patch().to(reset_password),
+                                    )
+                                    .route("/messages", web::get().to(get_messages))
+                                    .route("/messages", web::patch().to(patch_message))
+                                    .route("/blog/post", web::post().to(insert_article))
+                                    .route("/blog/publish", web::patch().to(publish_article))
+                                    .route("/blog/delete", web::delete().to(delete_article))
+                                    .route("/blog/edit", web::patch().to(edit_article))
+                                    .route("/totp/setup", web::get().to(totp_setup))
+                                    .route("/totp/confirm", web::post().to(totp_confirm))
+                                    .route("/totp/disable", web::post().to(totp_disable))
+                                    .route("/totp/status", web::get().to(totp_status)),
+                            ),
+                    );
+                } else {
+                    tracing::warn!(
+                        "Serving public API routes only; session-dependent routes will return 503"
+                    );
+                    cfg.service(
+                        web::scope("/v1")
+                            .wrap({
+                                let mut cors = Cors::default();
+
+                                for origin in &util_config.cors.allowed_origins {
+                                    cors = cors.allowed_origin(origin);
+                                }
+
+                                cors.allowed_methods(vec!["GET", "POST"])
+                                    .allowed_headers(vec![
+                                        http::header::AUTHORIZATION,
+                                        http::header::ACCEPT,
+                                        http::header::CONTENT_TYPE,
+                                        http::header::HeaderName::from_static("idempotency-key"),
+                                        http::header::HeaderName::from_static("x-xsrf-token"),
+                                    ])
+                                    .supports_credentials()
+                                    .max_age(util_config.cors.max_age)
+                            })
+                            .service(
+                                web::scope("/contact")
+                                    .wrap(from_fn(csrf_protection))
+                                    .route("", web::post().to(post_message)),
+                            )
+                            .route("/blog", web::get().to(get_articles))
+                            .route("/login", web::to(session_store_unavailable))
+                            .route("/verify_totp", web::to(session_store_unavailable))
+                            .route("/logout", web::to(session_store_unavailable))
+                            .route("/check_auth", web::to(session_store_unavailable))
+                            .route("/accept", web::to(session_store_unavailable))
+                            .service(
+                                web::scope("/chat_token")
+                                    .default_service(web::to(session_store_unavailable)),
+                            )
+                            .service(
+                                web::scope("/change_password")
+                                    .default_service(web::to(session_store_unavailable)),
+                            )
+                            .service(
+                                web::scope("/admin")
+                                    .default_service(web::to(session_store_unavailable)),
+                            ),
+                    );
+                }
+            })
             .app_data(db_pool.clone())
             .app_data(base_url.clone())
             .app_data(Data::new(secrets.hmac.clone()))
@@ -327,6 +394,15 @@ async fn run(
     .run();
 
     Ok(server)
+}
+
+async fn session_store_unavailable() -> HttpResponse {
+    HttpResponse::ServiceUnavailable().json(ApiErrorResponse {
+        code: "feature_unavailable",
+        message:
+            "Session-dependent features are temporarily unavailable because Redis is unavailable."
+                .to_owned(),
+    })
 }
 
 #[must_use]

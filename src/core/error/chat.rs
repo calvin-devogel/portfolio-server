@@ -65,3 +65,53 @@ impl ResponseError for ChatError {
         build_error_response(self)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::core::error::AuthError;
+
+    #[test]
+    fn jwt_generation_error_is_internal_server_error() {
+        let err = ChatError::JwtGeneration("Key parse failed".to_string());
+        assert_eq!(err.code(), "jwt_generation_failed");
+        assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            err.client_message(),
+            "An unexpected error occurred. Please try again later."
+        );
+    }
+
+    #[test]
+    fn user_not_found_error_is_not_found() {
+        let err = ChatError::UserNotFound(AuthError::Database(sqlx::Error::RowNotFound));
+        assert_eq!(err.code(), "user_not_found");
+        assert_eq!(err.status_code(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            err.client_message(),
+            "The specified user could not be found."
+        );
+    }
+
+    #[test]
+    fn database_error_is_internal_server_error() {
+        let err = ChatError::Database(sqlx::Error::RowNotFound);
+        assert_eq!(err.code(), "database_error");
+        assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            err.client_message(),
+            "An unexpected error occurred. Please try again later."
+        );
+    }
+
+    #[test]
+    fn unexpected_error_is_internal_server_error() {
+        let err = ChatError::Unexpected(anyhow::anyhow!("Something went wrong"));
+        assert_eq!(err.code(), "internal_error");
+        assert_eq!(err.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            err.client_message(),
+            "An unexpected error occurred. Please try again later."
+        );
+    }
+}
